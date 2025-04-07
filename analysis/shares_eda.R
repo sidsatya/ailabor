@@ -19,6 +19,13 @@ merged_data <- ipums_data %>%
               select(IPUMSOCCSOC, Title, DMNR, DMR, INR, IR),
               by = c("OCCSOC" = "IPUMSOCCSOC"))
 
+# create total wage and total employment columns
+merged_data <- merged_data %>%
+  mutate(
+    total_wage = INCWAGE * PERWT,
+    total_employment = PERWT
+  )
+
 # Print missing match information
 cat("Matched", nrow(merged_data[!is.na(merged_data$DMNR),]), "of", nrow(ipums_data), "rows\n")
 
@@ -91,26 +98,28 @@ first_year <- min(merged_data$YEAR, na.rm = TRUE)
 last_year <- max(merged_data$YEAR, na.rm = TRUE)
 cat("Analyzing wage growth from", first_year, "to", last_year, "\n")
 
-# Calculate income growth by occupation between first and last year
-income_growth <- merged_data %>%
+# Compute weighted average income and total employment by occupation and year
+growth_data <- merged_data %>%
   filter(YEAR %in% c(first_year, last_year)) %>%
   group_by(Title, OCCSOC, YEAR) %>%
   summarize(
-    n_workers = n(),
-    avg_incwage = mean(INCWAGE, na.rm = TRUE),
+    total_wage = sum(INCWAGE * PERWT, na.rm = TRUE),
+    total_employment = sum(PERWT, na.rm = TRUE),
+    avg_incwage = total_wage / total_employment,
     .groups = "drop"
   ) %>%
   pivot_wider(
     names_from = YEAR,
-    values_from = c(n_workers, avg_incwage)
+    values_from = c(avg_incwage, total_employment)
   ) %>%
   mutate(
-    incwage_growth = ((get(paste0("avg_incwage_", last_year)) / get(paste0("avg_incwage_", first_year))) - 1) * 100
+    wage_growth = ((get(paste0("avg_incwage_", last_year)) / get(paste0("avg_incwage_", first_year))) - 1) * 100,
+    employment_growth = ((get(paste0("total_employment_", last_year)) / get(paste0("total_employment_", first_year))) - 1) * 100
   )
 
 # Join income growth data back to occupation dimensions
 occupation_analysis <- primary_dim_summary %>%
-  left_join(income_growth %>% select(Title, incwage_growth), by = "Title")
+  left_join(growth_data %>% select(Title, wage_growth, employment_growth), by = "Title")
 
 # Create balance table by primary dimension
 balance_table <- merged_data %>%
@@ -120,6 +129,7 @@ balance_table <- merged_data %>%
     n_workers = n(),
     avg_incwage = mean(INCWAGE, na.rm = TRUE),
     median_incwage = median(INCWAGE, na.rm = TRUE),
+    
     avg_DMNR = mean(DMNR, na.rm = TRUE),
     avg_DMR = mean(DMR, na.rm = TRUE),
     avg_INR = mean(INR, na.rm = TRUE),
@@ -300,34 +310,6 @@ bubble_plot <- ggplot(growth_vs_share,
 
 print(bubble_plot)
 
-# 8. Task composition change over time (if available in multiple years)
-if(length(unique(onet_shares$Date)) > 1) {
-  # Convert Date column to year
-  onet_shares$year <- as.numeric(str_sub(onet_shares$Date, -4))
-  
-  # Analyze change in task composition
-  task_change <- onet_shares %>%
-    group_by(year) %>%
-    summarize(
-      avg_DMNR = mean(DMNR, na.rm = TRUE),
-      avg_DMR = mean(DMR, na.rm = TRUE),
-      avg_INR = mean(INR, na.rm = TRUE),
-      avg_IR = mean(IR, na.rm = TRUE)
-    ) %>%
-    pivot_longer(cols = starts_with("avg_"), 
-                 names_to = "dimension", 
-                 values_to = "share") %>%
-    mutate(dimension = str_remove(dimension, "avg_"))
-  
-  ggplot(task_change, aes(x = year, y = share, color = dimension, group = dimension)) +
-    geom_line(size = 1) +
-    geom_point() +
-    labs(title = "Change in Task Composition Over Time",
-         x = "Year",
-         y = "Average Share",
-         color = "Dimension") +
-    theme_minimal()
-}
 
 # Export results to CSV
 write.csv(balance_table, "healthcare_occupation_balance_table.csv", row.names = FALSE)
