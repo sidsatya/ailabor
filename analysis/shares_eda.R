@@ -9,15 +9,15 @@ library(gridExtra)
 library(broom)
 
 # Read datasets
-onet_shares <- fread("/Users/sidsatya/dev/ailabor/data/onet/onet_healthcare_occupations_with_shares.csv")
+onet_shares <- fread("/Users/sidsatya/dev/ailabor/data/onet/onet_data_with_shares.csv")
 ipums_data <- fread("/Users/sidsatya/dev/ailabor/data/ipums/ipums_healthcare_data.csv")
 
-# Merge datasets based on IPUMSOCCSOC
+# Merge datasets based on ONETOCCSOC_2018
 merged_data <- ipums_data %>%
   left_join(onet_shares %>%
-              mutate(IPUMSOCCSOC = as.character(IPUMSOCCSOC)) %>%
-              select(IPUMSOCCSOC, Title, DMNR, DMR, INR, IR),
-              by = c("OCCSOC" = "IPUMSOCCSOC"))
+              mutate(ONETOCCSOC_2018 = as.character(ONETOCCSOC_2018)) %>%
+              select(ONETOCCSOC_2018, Title, INR, IR, PNR, PR),
+              by = c("OCCSOC_2018" = "ONETOCCSOC_2018"))
 
 # create total wage and total employment columns
 merged_data <- merged_data %>%
@@ -27,23 +27,23 @@ merged_data <- merged_data %>%
   )
 
 # Print missing match information
-cat("Matched", nrow(merged_data[!is.na(merged_data$DMNR),]), "of", nrow(ipums_data), "rows\n")
+cat("Matched", nrow(merged_data[!is.na(merged_data$INR),]), "of", nrow(ipums_data), "rows\n")
 
 # Define primary dimension for each occupation
 # Method 1: Dimension with highest share
 merged_data <- merged_data %>%
   mutate(
     primary_dimension = case_when(
-      DMNR >= DMR & DMNR >= INR & DMNR >= IR ~ "DMNR",
-      DMR >= DMNR & DMR >= INR & DMR >= IR ~ "DMR",
-      INR >= DMNR & INR >= DMR & INR >= IR ~ "INR",
-      TRUE ~ "IR"
+      INR >= IR & INR >= PNR & INR >= PR ~ "INR",
+      IR >= INR & IR >= PNR & IR >= PR ~ "IR",
+      PNR >= INR & PNR >= IR & PNR >= PR ~ "PNR",
+      TRUE ~ "PR"
     ),
     primary_dimension_label = case_when(
-      primary_dimension == "DMNR" ~ "Decision Making Non-Routine",
-      primary_dimension == "DMR" ~ "Decision Making Routine",
       primary_dimension == "INR" ~ "Interpersonal Non-Routine",
-      primary_dimension == "IR" ~ "Interpersonal Routine"
+      primary_dimension == "IR" ~ "Interpersonal Routine",
+      primary_dimension == "PNR" ~ "Personal Non-Routine",
+      primary_dimension == "PR" ~ "Personal Routine"
     )
   )
 
@@ -52,17 +52,17 @@ merged_data <- merged_data %>%
 merged_data <- merged_data %>%
   mutate(
     dominant_dimension = case_when(
-      DMNR > 0.5 ~ "DMNR",
-      DMR > 0.5 ~ "DMR",
       INR > 0.5 ~ "INR",
       IR > 0.5 ~ "IR",
+      PNR > 0.5 ~ "PNR",
+      PR > 0.5 ~ "PR",
       TRUE ~ "Mixed"
     ),
     dominant_dimension_label = case_when(
-      dominant_dimension == "DMNR" ~ "Primarily Dexterous Manual Non-Routine",
-      dominant_dimension == "DMR" ~ "Primarily Dexterous Manual Routine",
-      dominant_dimension == "INR" ~ "Primarily Information Non-Routine",
-      dominant_dimension == "IR" ~ "Primarily Information Routine",
+      dominant_dimension == "INR" ~ "Primarily Interpersonal Non-Routine",
+      dominant_dimension == "IR" ~ "Primarily Interpersonal Routine",
+      dominant_dimension == "PNR" ~ "Primarily Personal Non-Routine",
+      dominant_dimension == "PR" ~ "Primarily Personal Routine",
       TRUE ~ "Mixed Tasks"
     )
   )
@@ -72,10 +72,10 @@ primary_dim_summary <- merged_data %>%
   group_by(Title, primary_dimension_label) %>%
   summarize(
     count = n(),
-    avg_DMNR = mean(DMNR, na.rm = TRUE),
-    avg_DMR = mean(DMR, na.rm = TRUE),
     avg_INR = mean(INR, na.rm = TRUE),
     avg_IR = mean(IR, na.rm = TRUE),
+    avg_PNR = mean(PNR, na.rm = TRUE),
+    avg_PR = mean(PR, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   arrange(primary_dimension_label, desc(count))
@@ -85,10 +85,10 @@ dominant_dim_summary <- merged_data %>%
   group_by(Title, dominant_dimension_label) %>%
   summarize(
     count = n(),
-    avg_DMNR = mean(DMNR, na.rm = TRUE),
-    avg_DMR = mean(DMR, na.rm = TRUE),
     avg_INR = mean(INR, na.rm = TRUE),
     avg_IR = mean(IR, na.rm = TRUE),
+    avg_PNR = mean(PNR, na.rm = TRUE),
+    avg_PR = mean(PR, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   arrange(dominant_dimension_label, desc(count))
@@ -101,16 +101,22 @@ cat("Analyzing wage growth from", first_year, "to", last_year, "\n")
 # Compute weighted average income and total employment by occupation and year
 growth_data <- merged_data %>%
   filter(YEAR %in% c(first_year, last_year)) %>%
-  group_by(Title, OCCSOC, YEAR) %>%
+  group_by(Title, OCCSOC_2018, YEAR) %>%
   summarize(
     total_wage = sum(INCWAGE * PERWT, na.rm = TRUE),
     total_employment = sum(PERWT, na.rm = TRUE),
-    avg_incwage = total_wage / total_employment,
+    n_obs = n(),
+    min_wage = min(INCWAGE, na.rm = TRUE),
+    max_wage = max(INCWAGE, na.rm = TRUE),
+    zero_weights = sum(PERWT == 0, na.rm = TRUE),
+    avg_incwage = if(total_employment > 0) total_wage / total_employment else NA_real_,
+    dominant_dimension_label = first(dominant_dimension_label),
+    primary_dimension_label = first(primary_dimension_label),
     .groups = "drop"
   ) %>%
   pivot_wider(
     names_from = YEAR,
-    values_from = c(avg_incwage, total_employment)
+    values_from = c(avg_incwage, total_employment, total_wage, n_obs, min_wage, max_wage, zero_weights)
   ) %>%
   mutate(
     wage_growth = ((get(paste0("avg_incwage_", last_year)) / get(paste0("avg_incwage_", first_year))) - 1) * 100,
@@ -130,10 +136,10 @@ balance_table <- merged_data %>%
     avg_incwage = mean(INCWAGE, na.rm = TRUE),
     median_incwage = median(INCWAGE, na.rm = TRUE),
     
-    avg_DMNR = mean(DMNR, na.rm = TRUE),
-    avg_DMR = mean(DMR, na.rm = TRUE),
     avg_INR = mean(INR, na.rm = TRUE),
-    avg_IR = mean(IR, na.rm = TRUE)
+    avg_IR = mean(IR, na.rm = TRUE),
+    avg_PNR = mean(PNR, na.rm = TRUE),
+    avg_PR = mean(PR, na.rm = TRUE)
   )
 
 # Print and save primary dimension balance table
@@ -148,15 +154,29 @@ balance_table_dominant <- merged_data %>%
     n_workers = n(),
     avg_incwage = mean(INCWAGE, na.rm = TRUE),
     median_incwage = median(INCWAGE, na.rm = TRUE),
-    avg_DMNR = mean(DMNR, na.rm = TRUE),
-    avg_DMR = mean(DMR, na.rm = TRUE),
     avg_INR = mean(INR, na.rm = TRUE),
-    avg_IR = mean(IR, na.rm = TRUE)
+    avg_IR = mean(IR, na.rm = TRUE),
+    avg_PNR = mean(PNR, na.rm = TRUE),
+    avg_PR = mean(PR, na.rm = TRUE)
   )
 
 # Print and save dominant dimension balance table
 knitr::kable(balance_table_dominant, digits = 2, caption = "Balance Table by Dominant Task Dimension")
 write.csv(balance_table_dominant, "/Users/sidsatya/dev/ailabor/results/balance_table_dominant_dimension.csv", row.names = FALSE)
+
+# Save titles pertaining to each dimension to a txt file using a for loop
+for (dim in c("INR", "IR", "PNR", "PR")) {
+  write.table(
+    merged_data %>% 
+      filter(primary_dimension == dim) %>% 
+      select(Title) %>% 
+      distinct(),
+    file = paste0("/Users/sidsatya/dev/ailabor/results/primary_", dim, "_titles.txt"),
+    row.names = FALSE,
+    col.names = FALSE,
+    quote = FALSE
+  )
+}
 
 # ---- VISUALIZATIONS ----
 
@@ -174,9 +194,9 @@ ggsave("/Users/sidsatya/dev/ailabor/results/occupation_count_by_primary_dimensio
 
 # 2. Distribution of dimension shares across occupations
 dimension_shares <- merged_data %>%
-  select(Title, DMNR, DMR, INR, IR) %>%
+  select(Title, INR, IR, PNR, PR) %>%
   distinct() %>%
-  pivot_longer(cols = c(DMNR, DMR, INR, IR), names_to = "Dimension", values_to = "Share")
+  pivot_longer(cols = c(INR, IR, PNR, PR), names_to = "Dimension", values_to = "Share")
 
 ggplot(dimension_shares, aes(x = Dimension, y = Share, fill = Dimension)) +
   geom_boxplot() +
@@ -190,6 +210,7 @@ ggsave("/Users/sidsatya/dev/ailabor/results/dimension_shares_distribution.png", 
 
 # 3. Heatmap of dimension shares by top occupations
 top_occupations <- merged_data %>%
+  filter(!is.na(Title)) %>%
   group_by(Title) %>%
   summarize(count = n(), .groups = "drop") %>%
   arrange(desc(count)) %>%
@@ -198,9 +219,9 @@ top_occupations <- merged_data %>%
 
 heatmap_data <- merged_data %>%
   filter(Title %in% top_occupations) %>%
-  select(Title, DMNR, DMR, INR, IR) %>%
+  select(Title, INR, IR, PNR, PR) %>%
   distinct() %>%
-  pivot_longer(cols = c(DMNR, DMR, INR, IR), names_to = "Dimension", values_to = "Share")
+  pivot_longer(cols = c(INR, IR, PNR, PR), names_to = "Dimension", values_to = "Share")
 
 ggplot(heatmap_data, aes(x = Dimension, y = reorder(Title, Share), fill = Share)) +
   geom_tile() +
@@ -236,30 +257,23 @@ ggplot(time_series, aes(x = YEAR, y = avg_incwage, color = primary_dimension_lab
 ggsave("/Users/sidsatya/dev/ailabor/results/income_by_dimension_over_time.png", width = 10, height = 6)
 
 # 5. Income growth vs. initial dimension share
-growth_vs_share <- income_growth %>%
+
+growth_vs_share <- growth_data %>% 
+  filter(!is.na(wage_growth) & is.finite(wage_growth) & !is.na(wage_growth) & is.finite(wage_growth)) %>%
   left_join(onet_shares %>% 
-          mutate(IPUMSOCCSOC = as.character(IPUMSOCCSOC)) %>% 
-          select(IPUMSOCCSOC, Title, DMNR, DMR, INR, IR), 
-          by = c("OCCSOC" = "IPUMSOCCSOC"))
+          mutate(ONETOCCSOC_2018 = as.character(ONETOCCSOC_2018)) %>% 
+          select(ONETOCCSOC_2018, Title, INR, IR, PNR, PR), 
+          by = c("OCCSOC_2018" = "ONETOCCSOC_2018"))
+
+growth_vs_share_inc <- growth_data %>% 
+  filter(!is.na(wage_growth) & is.finite(wage_growth)) %>%
+  left_join(onet_shares %>% 
+          mutate(ONETOCCSOC_2018 = as.character(ONETOCCSOC_2018)) %>% 
+          select(ONETOCCSOC_2018, Title, INR, IR, PNR, PR), 
+          by = c("OCCSOC_2018" = "ONETOCCSOC_2018"))
 
 # Create scatter plots for each dimension
-DMNR_plot <- ggplot(growth_vs_share, aes(x = DMNR, y = incwage_growth)) +
-  geom_point(alpha = 0.7) +
-  geom_smooth(method = "lm", color = "blue") +
-  labs(title = "Income Growth vs. DMNR Share",
-       x = "DMNR Share",
-       y = "Income Growth (%)") +
-  theme_minimal()
-
-DMR_plot <- ggplot(growth_vs_share, aes(x = DMR, y = incwage_growth)) +
-  geom_point(alpha = 0.7) +
-  geom_smooth(method = "lm", color = "red") +
-  labs(title = "Income Growth vs. DMR Share",
-       x = "DMR Share",
-       y = "Income Growth (%)") +
-  theme_minimal()
-
-INR_plot <- ggplot(growth_vs_share, aes(x = INR, y = incwage_growth)) +
+INR_plot <- ggplot(growth_vs_share_inc, aes(x = INR, y = wage_growth)) +
   geom_point(alpha = 0.7) +
   geom_smooth(method = "lm", color = "green") +
   labs(title = "Income Growth vs. INR Share",
@@ -267,7 +281,7 @@ INR_plot <- ggplot(growth_vs_share, aes(x = INR, y = incwage_growth)) +
        y = "Income Growth (%)") +
   theme_minimal()
 
-IR_plot <- ggplot(growth_vs_share, aes(x = IR, y = incwage_growth)) +
+IR_plot <- ggplot(growth_vs_share_inc, aes(x = IR, y = wage_growth)) +
   geom_point(alpha = 0.7) +
   geom_smooth(method = "lm", color = "purple") +
   labs(title = "Income Growth vs. IR Share",
@@ -275,59 +289,151 @@ IR_plot <- ggplot(growth_vs_share, aes(x = IR, y = incwage_growth)) +
        y = "Income Growth (%)") +
   theme_minimal()
 
-grid.arrange(DMNR_plot, DMR_plot, INR_plot, IR_plot, ncol = 2)
+PNR_plot <- ggplot(growth_vs_share_inc, aes(x = PNR, y = wage_growth)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(title = "Income Growth vs. PNR Share",
+       x = "PNR Share",
+       y = "Income Growth (%)") +
+  theme_minimal()
+
+PR_plot <- ggplot(growth_vs_share_inc, aes(x = PR, y = wage_growth)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Income Growth vs. PR Share",
+       x = "PR Share",
+       y = "Income Growth (%)") +
+  theme_minimal()
+
+grid.arrange(INR_plot, IR_plot, PNR_plot, PR_plot, ncol = 2)
 
 # Save plots
 ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_dimension_share.png", width = 12, height = 8)
-ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_DMNR.png", plot = DMNR_plot, width = 6, height = 4)  
-ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_DMR.png", plot = DMR_plot, width = 6, height = 4)
-ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_INR.png", plot = INR_plot, width = 6, height = 4)
+ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_INR.png", plot = INR_plot, width = 6, height = 4)  
 ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_IR.png", plot = IR_plot, width = 6, height = 4)
+ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_PNR.png", plot = PNR_plot, width = 6, height = 4)
+ggsave("/Users/sidsatya/dev/ailabor/results/income_growth_vs_PR.png", plot = PR_plot, width = 6, height = 4)
 
-# 6. Regression analysis of wage growth and task dimensions
-growth_model <- lm(incwage_growth ~ DMNR + DMR + INR + IR, data = growth_vs_share)
-growth_summary <- summary(growth_model)
-growth_tidy <- tidy(growth_model, conf.int = TRUE)
+# 6. Employment growth vs. initial dimension share
+growth_vs_share_emp <- growth_data %>% 
+  filter(!is.na(employment_growth) & is.finite(employment_growth)) %>%
+  left_join(onet_shares %>% 
+          mutate(ONETOCCSOC_2018 = as.character(ONETOCCSOC_2018)) %>% 
+          select(ONETOCCSOC_2018, Title, INR, IR, PNR, PR), 
+          by = c("OCCSOC_2018" = "ONETOCCSOC_2018"))
+
+# Create scatter plots for each dimension
+INR_plot <- ggplot(growth_vs_share_emp, aes(x = INR, y = employment_growth)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Employment Growth vs. INR Share",
+       x = "INR Share",
+       y = "Employment Growth (%)") +
+  theme_minimal()
+
+IR_plot <- ggplot(growth_vs_share_emp, aes(x = IR, y = employment_growth)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", color = "purple") +
+  labs(title = "Employment Growth vs. IR Share",
+       x = "IR Share",
+       y = "Employment Growth (%)") +
+  theme_minimal()
+
+PNR_plot <- ggplot(growth_vs_share_emp, aes(x = PNR, y = employment_growth)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(title = "Employment Growth vs. PNR Share",
+       x = "PNR Share",
+       y = "Employment Growth (%)") +
+  theme_minimal()
+
+PR_plot <- ggplot(growth_vs_share_emp, aes(x = PR, y = employment_growth)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Employment Growth vs. PR Share",
+       x = "PR Share",
+       y = "Employment Growth (%)") +
+  theme_minimal()
+
+grid.arrange(INR_plot, IR_plot, PNR_plot, PR_plot, ncol = 2)
+
+# Save plots
+ggsave("/Users/sidsatya/dev/ailabor/results/employment_growth_vs_dimension_share.png", width = 12, height = 8)
+ggsave("/Users/sidsatya/dev/ailabor/results/employment_growth_vs_INR.png", plot = INR_plot, width = 6, height = 4)  
+ggsave("/Users/sidsatya/dev/ailabor/results/employment_growth_vs_IR.png", plot = IR_plot, width = 6, height = 4)
+ggsave("/Users/sidsatya/dev/ailabor/results/employment_growth_vs_PNR.png", plot = PNR_plot, width = 6, height = 4)
+ggsave("/Users/sidsatya/dev/ailabor/results/employment_growth_vs_PR.png", plot = PR_plot, width = 6, height = 4)
+
+
+# 7. Regression analysis of wage growth and task dimensions
+inc_growth_model <- lm(wage_growth ~ INR + IR + PNR + PR, data = growth_vs_share_inc)
+inc_growth_summary <- summary(inc_growth_model)
+inc_growth_tidy <- tidy(inc_growth_model, conf.int = TRUE)
 
 # Create regression table
-knitr::kable(growth_tidy, digits = 3, 
+knitr::kable(inc_growth_tidy, digits = 3, 
              caption = "Regression: Income Growth vs. Task Dimensions")
 
+write.csv(inc_growth_tidy, "results/income_growth_regression.csv", row.names = FALSE)
+
+# 8. Regression analysis of employment growth and task dimensions
+emp_growth_model <- lm(employment_growth ~ INR + IR + PNR + PR, data = growth_vs_share_inc)
+emp_growth_summary <- summary(emp_growth_model)
+emp_growth_tidy <- tidy(emp_growth_model, conf.int = TRUE)
+
+# Create regression table
+knitr::kable(emp_growth_tidy, digits = 3, 
+             caption = "Regression: Income Growth vs. Task Dimensions")
+
+write.csv(growth_tidy, "results/employment_growth_regression.csv", row.names = FALSE)
+
 # 7. Bubble chart of wage growth by dimension and occupation size
+# Create a version of the data without outliers
+growth_vs_share_no_outliers <- growth_vs_share %>%
+  filter(between(wage_growth, 
+                quantile(wage_growth, 0.05, na.rm = TRUE),
+                quantile(wage_growth, 0.95, na.rm = TRUE)) &
+         between(employment_growth,
+                quantile(employment_growth, 0.05, na.rm = TRUE),
+                quantile(employment_growth, 0.95, na.rm = TRUE)))
+
+# Create both plots
 bubble_plot <- ggplot(growth_vs_share, 
-                     aes(x = incwage_growth, 
-                         y = earnings_growth, 
-                         size = get(paste0("n_workers_", last_year)), 
-                         color = dominant_dimension)) +
+                     aes(x = wage_growth, 
+                         y = employment_growth, 
+                         size = get(paste0("n_obs_", last_year)), 
+                         color = dominant_dimension_label)) +
   geom_point(alpha = 0.7) +
-  labs(title = paste("Income & Earnings Growth by Task Dimension (", first_year, "-", last_year, ")", sep = ""),
+  labs(title = paste("Income & Employment Growth by Task Dimension (", first_year, "-", last_year, ")", sep = ""),
        x = "Wage Growth (%)",
-       y = "Earnings Growth (%)",
+       y = "Employment Growth (%)",
        color = "Dominant Dimension",
        size = "Number of Workers") +
   theme_minimal() +
   scale_color_brewer(palette = "Set1")
 
+bubble_plot_no_outliers <- ggplot(growth_vs_share_no_outliers, 
+                     aes(x = wage_growth, 
+                         y = employment_growth, 
+                         size = get(paste0("n_obs_", last_year)), 
+                         color = dominant_dimension_label)) +
+  geom_point(alpha = 0.7) +
+  labs(title = paste("Income & Employment Growth by Task Dimension (", first_year, "-", last_year, ") - Without Outliers", sep = ""),
+       x = "Wage Growth (%)",
+       y = "Employment Growth (%)",
+       color = "Dominant Dimension",
+       size = "Number of Workers") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1")
+
+# Save both plots
+ggsave("/Users/sidsatya/dev/ailabor/results/growth_bubble_plot.png", plot = bubble_plot, width = 10, height = 6)
+ggsave("/Users/sidsatya/dev/ailabor/results/growth_bubble_plot_no_outliers.png", plot = bubble_plot_no_outliers, width = 10, height = 6)
+
 print(bubble_plot)
+print(bubble_plot_no_outliers)
 
 
 # Export results to CSV
 write.csv(balance_table, "healthcare_occupation_balance_table.csv", row.names = FALSE)
 write.csv(occupation_analysis, "healthcare_occupation_analysis.csv", row.names = FALSE)
-write.csv(growth_tidy, "income_growth_regression.csv", row.names = FALSE)
-
-# Print summary and conclusions
-cat("\nSUMMARY OF FINDINGS:\n")
-cat("1. Distribution of occupations by primary dimension:\n")
-print(table(merged_data$primary_dimension_label))
-cat("\n2. Distribution of occupations by dominant dimension (>50% share):\n")
-print(table(merged_data$dominant_dimension_label))
-cat("\n3. Regression analysis of income growth vs. task dimensions:\n")
-print(growth_summary)
-cat("\n4. Average income growth by primary dimension:\n")
-merged_data %>%
-  group_by(primary_dimension_label) %>%
-  inner_join(income_growth, by = "Title") %>%
-  summarize(avg_growth = mean(incwage_growth, na.rm = TRUE)) %>%
-  print()
-

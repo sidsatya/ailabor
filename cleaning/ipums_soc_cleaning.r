@@ -1,36 +1,14 @@
-# NOTE: To load data, you must download both the extract's data and the DDI
-# and also set the working directory to the folder with these files (or change the path below).
+library(data.table)
 library(dplyr)
-library(readr)
 library(stringdist)  # Add this library for string similarity
 
-# section: Loading the data and filtering for healthcare-related industries
-if (!require("ipumsr")) stop("Reading IPUMS data into R requires the ipumsr package. It can be installed using the following command: install.packages('ipumsr')")
-
-ddi <- read_ipums_ddi("data/ipums/usa_00012.xml")
-data <- read_ipums_micro(ddi)
-
-# Define healthcare-related IND1990 codes
-healthcare_industries_1990 <- c(812, 820, 821, 822, 830, 831, 832, 840)
-
-# Filter the data for healthcare-related industries
-filtered_data <- data %>%
-  filter(!is.na(IND1990) & as.integer(IND1990) %in% healthcare_industries_1990)
-
-head(filtered_data)
-
-# Get the min year and max year
-min_year <- min(filtered_data$YEAR)
-max_year <- max(filtered_data$YEAR)
-cat("The data contains records from", min_year, "to", max_year, "\n")
-
-# section: Harmonizing OCCSOC codes
+ipums_data <- fread("/Users/sidsatya/dev/ailabor/data/ipums/ipums_healthcare_data.csv")
 master_crosswalk_data <- fread("/Users/sidsatya/dev/ailabor/data/occsoc_crosswalks/occsoc_crosswalk_2000_onward_without_code_descriptions.csv")
 crosswalk_2000_to_2010 <- fread("/Users/sidsatya/dev/ailabor/data/occsoc_crosswalks/soc_2000_to_2010_crosswalk.csv")
 crosswalk_2010_to_2018 <- fread("/Users/sidsatya/dev/ailabor/data/occsoc_crosswalks/soc_2010_to_2018_crosswalk.csv")
 
 # Step 1: Ensure YEAR is numeric
-healthcare_data <- healthcare_data %>%
+ipums_data <- ipums_data %>%
   mutate(YEAR = as.numeric(YEAR))
 
 # Step 2: Convert SOC codes in crosswalks and handle duplicates
@@ -64,59 +42,56 @@ crosswalk_2010_to_2018 <- crosswalk_2010_to_2018 %>%
 
 # Step 3: Harmonize OCCSOC to OCCSOC_2018
 # For 2008–2009 Data
-data_2008_2009 <- healthcare_data %>%
+data_2008_2009 <- ipums_data %>%
   filter(YEAR %in% 2008:2009) %>%
   left_join(crosswalk_2000_to_2010, by = c("OCCSOC" = "SOC_2000")) %>%
   left_join(crosswalk_2010_to_2018, by = "SOC_2010") %>%
   rename(OCCSOC_2018 = SOC_2018) %>%
   # Keep only original columns plus the new OCCSOC_2018 column
-  select(names(healthcare_data), OCCSOC_2018)
+  select(names(ipums_data), OCCSOC_2018)
 
 # For 2010–2017 Data
-data_2010_2017 <- healthcare_data %>%
+data_2010_2017 <- ipums_data %>%
   filter(YEAR %in% 2010:2017) %>%
   left_join(crosswalk_2010_to_2018, by = c("OCCSOC" = "SOC_2010")) %>%
   rename(OCCSOC_2018 = SOC_2018) %>%
   # Keep only original columns plus the new OCCSOC_2018 column
-  select(names(healthcare_data), OCCSOC_2018)
+  select(names(ipums_data), OCCSOC_2018)
 
 # For 2018–2023 Data
-data_2018_2023 <- healthcare_data %>%
+data_2018_2023 <- ipums_data %>%
   filter(YEAR %in% 2018:2023) %>%
   mutate(OCCSOC_2018 = OCCSOC) %>%
   # Keep only original columns plus the new OCCSOC_2018 column
-  select(names(healthcare_data), OCCSOC_2018)
+  select(names(ipums_data), OCCSOC_2018)
 
-# ----- Combining and finalizing the harmonized dataset -----
-# Merge all time periods into a single dataset with consistent occupation coding
-healthcare_data_harmonized <- bind_rows(data_2008_2009, data_2010_2017, data_2018_2023)
+# Combine all data
+ipums_data_harmonized <- bind_rows(data_2008_2009, data_2010_2017, data_2018_2023)
 
-# Add occupation titles to make the data more interpretable
-# Extract just what we need from the crosswalk to avoid duplicate columns
+# Step 4: Add OCCSOC_title_2018 using the correct column from crosswalk
+# Convert the 2018 SOC code in the crosswalk for joining
 crosswalk_2010_to_2018_titles <- crosswalk_2010_to_2018 %>%
   select(SOC_2018, `2018 SOC Title`) %>%
   distinct()
 
-# Join the titles to our harmonized dataset based on the 2018 SOC codes
-healthcare_data_harmonized <- healthcare_data_harmonized %>%
+ipums_data_harmonized <- ipums_data_harmonized %>%
   left_join(
     crosswalk_2010_to_2018_titles, 
     by = c("OCCSOC_2018" = "SOC_2018")
   ) %>%
   rename(OCCSOC_title_2018 = `2018 SOC Title`)
 
-# Remove records where occupation couldn't be properly harmonized to 2018 classification
+# drop any observations with a null OCCSOC_2018
 ipums_data_harmonized <- ipums_data_harmonized %>%
   filter(!is.na(OCCSOC_2018))
 
-# Save the cleaned and harmonized dataset for further analysis
-fwrite(healthcare_data_harmonized, "/Users/sidsatya/dev/ailabor/data/ipums/ipums_healthcare_data.csv")
+# Save the harmonized data
+fwrite(ipums_data_harmonized, "/Users/sidsatya/dev/ailabor/data/ipums/ipums_healthcare_data.csv")
 
-# ----- Extract unique occupation codes for reference -----
-# This creates a simple lookup of all healthcare occupations in our dataset
-unique_occsoc_codes <- unique(filtered_data$OCCSOC_2018)
+# Get all unique OCCSOC codes
+unique_occsoc_codes <- unique(ipums_data_harmonized$OCCSOC_2018)
 
 unique_occsoc_codes %>% 
   as.data.frame(columns=) %>%
   setNames("OCCSOC_2018") %>%
-  write_csv("data/ipums/ipums_unique_healthcare_occsoc_codes.csv")
+  write_csv("data/ipums/unique_healthcare_occsoc_codes.csv")

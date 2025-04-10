@@ -76,7 +76,7 @@ def classify_task(client: OpenAI, system_prompt: str, task: str, iteration: int,
         raise
 
 def append_to_results(df: pd.DataFrame, filepath: str, first_write: bool = False):
-    mode = 'w' if first_write else 'a'
+    mode = 'w' if not os.path.exists(filepath) else 'a'
     header = first_write
     df.to_csv(filepath, mode=mode, header=header, index=False)
 
@@ -103,21 +103,23 @@ def process_batch(batch: pd.DataFrame, system_prompt: str, client: OpenAI, num_s
     
     return pd.DataFrame(results)
 
+
 def process_dataframe(df: pd.DataFrame
                       , system_prompt: str
                       , batch_size: int = 50
                       , num_samples: int = 1
-                      , final_savepath = "classified_tasks_final.csv") -> pd.DataFrame:
+                      , intermediate_savepath: str = "intermediate_results/classified_tasks_intermediate.csv"
+                      , final_savepath: str = "classified_tasks_final.csv") -> pd.DataFrame:
     os.chdir(os.path.dirname(__file__))
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
     # Create output directory
-    output_dir = "data/intermediate_results"
+    output_dir = "data/"
     os.makedirs(output_dir, exist_ok=True)
     
     # Create single intermediate file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    intermediate_path = os.path.join(output_dir, f"classified_tasks_intermediate_{timestamp}.csv")
+    intermediate_path = os.path.join(output_dir, intermediate_savepath)
     
     # Process in batches
     all_results = []
@@ -139,7 +141,8 @@ def process_dataframe(df: pd.DataFrame
         time.sleep(1)
     
     # Combine all results
-    final_df = pd.concat(all_results, ignore_index=True)
+    # final_df = pd.concat(all_results, ignore_index=True)
+    final_df = pd.read_csv(intermediate_path)
     
     # Save final results (copy intermediate to final location)
     final_path = os.path.join("data", final_savepath)
