@@ -156,7 +156,7 @@ Pre-processed files are also available for quick replication without reprocessin
 - **Bubble Plots**: Joint wage/employment/size plots
 
 ## TODO
-- Analyze changes in task shares over time
+- Analyze changes in task shares over time. Think about core vs. supplementary tasks and date as well.
 - Double check and understand differences in wage growth (check relative vs. absolute growth)
 - Check that replication can be run top to bottom and include full instructions.
 
