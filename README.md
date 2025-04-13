@@ -47,7 +47,7 @@ The analysis examines how these task dimensions relate to wages, employment grow
 
 ### Cleaning Scripts
 
-- `ipums_cleaning.r` and `ipums_soc_cleaning.r`
+- `ipums_cleaning.r`
   - Filter IPUMS data for healthcare-related industries
   - Harmonize occupation codes (SOC) across 2008-2023
   - Apply crosswalks to ensure consistent occupation coding over time
@@ -79,7 +79,7 @@ For replication:
 - `onet_task_statements_classified_8_dim.csv`
 
 ### IPUMS USA
-- Extract with:
+- Extract the ACS from 2008 to 2023 with the following fields:
   - `YEAR`
   - `IND1990`
   - `OCCSOC`
@@ -126,10 +126,10 @@ Output files will be saved in `results/dim_4_results/` and `results/dim_8_result
 ## Task Classification Process
 
 ### 4-Dimension
-- INR: Unpredictable human interaction
-- IR: Standardized human interaction
-- PNR: Non-interactive tasks requiring judgment/creativity
-- PR: Repetitive non-interactive tasks
+- INR: Interpersonal, Non-Routine
+- IR: Interpersonal, Routine
+- PNR: Personal, Non-Routine
+- PR: Personal, Routine
 
 ### 8-Dimension
 Adds a manual/non-manual distinction to the above. For example:
@@ -157,8 +157,8 @@ Pre-processed files are also available for quick replication without reprocessin
 
 ## TODO
 - Analyze changes in task shares over time
-- Extend classification to all healthcare occupations under new scheme
-- Add employment plots to results
+- Double check and understand differences in wage growth (check relative vs. absolute growth)
+- Check that replication can be run top to bottom and include full instructions.
 
 ---
 
