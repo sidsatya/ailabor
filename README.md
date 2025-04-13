@@ -4,7 +4,7 @@ This repository contains code and data for analyzing task dimensions in healthca
 
 ## Project Overview
 
-This project investigates how different task dimensions in healthcare occupations correlate with labor market outcomes. We classify occupational tasks along two frameworks:
+This project investigates how different task dimensions in healthcare occupations correlate with labor market outcomes. I classify occupational tasks along two frameworks:
 
 ### 1. 4-Dimension Framework
 - Interpersonal Non-Routine (INR)
@@ -162,4 +162,4 @@ Pre-processed files are also available for quick replication without reprocessin
 
 ---
 
-For questions or additional information, please contact the repository owner.
+For questions or additional information, please contact me (Sid Satya).
