@@ -39,8 +39,14 @@ The analysis examines how these task dimensions relate to wages, employment grow
 │   ├── onet/
 │   └── occsoc_crosswalks/
 └── results/                # Output files (created by scripts)
-    ├── dim_4_results/
-    └── dim_8_results/
+│   ├── dim_4_results/
+│   └── dim_8_results/
+└── task_classification/    # Files for GPT classification of O*NET tasks
+    ├── data/
+    └── prompts/
+    └── gpt_classification.py
+    └── helper.py
+
 ```
 
 ## Key Files and Their Functions
@@ -108,7 +114,6 @@ source("cleaning/compute_onet_task_shares.r")
 3. If working with raw IPUMS data, place the extract in `data/ipums/` and run:
 ```r
 source("cleaning/ipums_cleaning.r")
-source("cleaning/ipums_soc_cleaning.r")
 ```
 
 ### Step 3: Analysis
@@ -121,9 +126,14 @@ source("analysis/shares_eda_4_dim.R")
 source("analysis/shares_eda_8_dim.R")
 ```
 
+## Output Files
 Output files will be saved in `results/dim_4_results/` and `results/dim_8_results/`
+- **Balance Tables**: Summary stats by task dimension
+- **Growth Plots**: Wage and employment growth visualizations
+- **Regression Tables**: Output from statistical models
+- **Bubble Plots**: Joint wage/employment/size plots
 
-## Task Classification Process
+## Task Classification 
 
 ### 4-Dimension
 - INR: Interpersonal, Non-Routine
@@ -137,23 +147,20 @@ Adds a manual/non-manual distinction to the above. For example:
 - IP_R_NM: Interpersonal, Routine, Non-Manual
 - etc.
 
-Task classification was based on a combination of expert coding, NLP techniques, and manual review.
+Task classification was done using OpenAI's GPT-4o-mini model. 
 
 ## Replication Instructions
 
 To fully replicate results:
 1. Place the required data in appropriate directories
-2. Run `compute_onet_task_shares.r`
-3. Run the EDA scripts for either framework
+2. Run `gpt_classification.py`
 
-Pre-processed files are also available for quick replication without reprocessing.
+Pre-processed files are also available for analysis without running the task.
 
 ## Output Files
-
-- **Balance Tables**: Summary stats by task dimension
-- **Growth Plots**: Wage and employment growth visualizations
-- **Regression Tables**: Output from statistical models
-- **Bubble Plots**: Joint wage/employment/size plots
+Intermediate data files will be saved to `task_classification/data`. Final output files with O*NET data merged to classified tasks will be saved in `data/onet/` as: 
+- `data/onet/onet_task_statements_classified_4_dim.csv`
+- `data/onet/onet_task_statements_classified_8_dim.csv`
 
 ## TODO
 - Analyze changes in task shares over time. Think about core vs. supplementary tasks and date as well.

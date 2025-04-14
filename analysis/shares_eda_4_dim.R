@@ -18,12 +18,32 @@ library(stringr)
 library(gridExtra)
 library(broom)
 
+
+# Check if ROOT_DIR is defined in the environment
+root_dir_env <- Sys.getenv("ROOT_DIR", unset = NA)
+
+if (is.na(root_dir_env) || root_dir_env == "") {
+  # Fallback: set manually
+  ROOT_DIR <- "/Users/sidsatya/dev/ailabor"  # Change to your actual project path
+  message("ROOT_DIR not found in environment. Using fallback path: ", ROOT_DIR)
+} else {
+  ROOT_DIR <- root_dir_env
+  message("Using ROOT_DIR from environment: ", ROOT_DIR)
+}
+
 # -----------------------------------------------------------------------------
 # 2. DATA IMPORT AND PREPARATION
 # -----------------------------------------------------------------------------
 # Read source datasets: ONET task dimensions (4-dimension model) and IPUMS labor market data
-onet_shares <- fread("/Users/sidsatya/dev/ailabor/data/onet/onet_data_with_shares_4_dim.csv")
-ipums_data <- fread("/Users/sidsatya/dev/ailabor/data/ipums/ipums_healthcare_data.csv")
+onet_shares_path = file.path(ROOT_DIR, "data", "onet", "onet_data_with_shares_4_dim.csv")
+ipums_data_path = file.path(ROOT_DIR, "data", "ipums", "ipums_healthcare_data.csv")
+
+onet_shares <- fread(onet_shares_path)
+ipums_data <- fread(ipums_data_path)
+
+# Set directory for results and directory if it doesn't exist
+RESULTS_DIR = file.path(ROOT_DIR, "results", "dim_4_results")
+dir.create(RESULTS_DIR, showWarnings = FALSE, recursive = TRUE)
 
 # Merge datasets based on occupation codes (ONETOCCSOC_2018 matches OCCSOC_2018)
 merged_data <- ipums_data %>%
@@ -192,9 +212,6 @@ occupation_analysis <- primary_dim_summary %>%
 # -----------------------------------------------------------------------------
 # 7. BALANCE TABLES AND DATA EXPORTS
 # -----------------------------------------------------------------------------
-# Create results directory if it doesn't exist
-dir.create("/Users/sidsatya/dev/ailabor/results/dim_4_results/", showWarnings = FALSE, recursive = TRUE)
-
 # Create balance table by primary dimension
 balance_table <- balanced_data %>%
   group_by(primary_dimension_label) %>%
@@ -212,7 +229,7 @@ balance_table <- balanced_data %>%
 
 # Display and save primary dimension balance table
 knitr::kable(balance_table, digits = 2, caption = "Balance Table by Primary Task Dimension")
-write.csv(balance_table, "/Users/sidsatya/dev/ailabor/results/dim_4_results/balance_table_primary_dimension.csv", row.names = FALSE)
+write.csv(balance_table, file.path(RESULTS_DIR, "balance_table_primary_dimension.csv"), row.names = FALSE)
 
 # Create and save balance table by dominant dimension
 balance_table_dominant <- balanced_data %>%
@@ -231,7 +248,7 @@ balance_table_dominant <- balanced_data %>%
 
 # Display and save dominant dimension balance table
 knitr::kable(balance_table_dominant, digits = 2, caption = "Balance Table by Dominant Task Dimension")
-write.csv(balance_table_dominant, "/Users/sidsatya/dev/ailabor/results/dim_4_results/balance_table_dominant_dimension.csv", row.names = FALSE)
+write.csv(balance_table_dominant, file.path(RESULTS_DIR, "balance_table_dominant_dimension.csv"), row.names = FALSE)
 
 # Save titles pertaining to each dimension to a txt file using a for loop
 for (dim in c("INR", "IR", "PNR", "PR")) {
@@ -240,7 +257,7 @@ for (dim in c("INR", "IR", "PNR", "PR")) {
       filter(primary_dimension == dim) %>% 
       select(Title) %>% 
       distinct(),
-    file = paste0("/Users/sidsatya/dev/ailabor/results/dim_4_results/primary_", dim, "_titles.txt"),
+    file = paste0(RESULTS_DIR, "/primary_", dim, "_titles.txt"),
     row.names = FALSE,
     col.names = FALSE,
     quote = FALSE
@@ -265,7 +282,7 @@ ggplot(primary_dim_summary, aes(x = primary_dimension_label, fill = primary_dime
   theme_minimal() +
   theme(axis.text.x = element_blank())
 
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/occupation_count_by_primary_dimension.png", 
+ggsave(file.path(RESULTS_DIR, "occupation_count_by_primary_dimension.png"), 
        width = 12, height = 8)
 
 # -----------------------------------------------------------------------------
@@ -288,7 +305,7 @@ ggplot(dimension_shares, aes(x = Dimension, y = Share, fill = Dimension)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/dimension_shares_distribution.png", 
+ggsave(file.path(RESULTS_DIR, "dimension_shares_distribution.png"), 
        width = 12, height = 8)
 
 # -----------------------------------------------------------------------------
@@ -324,7 +341,7 @@ ggplot(heatmap_data, aes(x = Dimension, y = reorder(Title, Share), fill = Share)
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/heatmap_top_occupations.png", 
+ggsave(file.path(RESULTS_DIR, "heatmap_top_occupations.png"), 
        width = 12, height = 8)
 
 # -----------------------------------------------------------------------------
@@ -356,7 +373,7 @@ ggplot(time_series, aes(x = YEAR, y = avg_incwage, color = primary_dimension_lab
   scale_color_brewer(palette = "Set2") +
   theme(legend.position = "bottom", legend.box = "horizontal")
 
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/average_income_by_dimension_over_time.png", 
+ggsave(file.path(RESULTS_DIR, "average_income_by_dimension_over_time.png"), 
        width = 12, height = 8)
 
 # Plot median income trends by dimension
@@ -372,7 +389,7 @@ ggplot(time_series, aes(x = YEAR, y = median_incwage, color = primary_dimension_
   scale_color_brewer(palette = "Set2") +
   theme(legend.position = "bottom", legend.box = "horizontal")
 
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/median_income_by_dimension_over_time.png", 
+ggsave(file.path(RESULTS_DIR, "median_income_by_dimension_over_time.png"), 
        width = 12, height = 8)
 
 # Plot total employment trends by dimension
@@ -388,7 +405,7 @@ ggplot(time_series, aes(x = YEAR, y = total_employment, color = primary_dimensio
   scale_color_brewer(palette = "Set2") +
   theme(legend.position = "bottom", legend.box = "horizontal")
 
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/total_employment_by_dimension_over_time.png", 
+ggsave(file.path(RESULTS_DIR, "total_employment_by_dimension_over_time.png"), 
        width = 12, height = 8)
 
 # -----------------------------------------------------------------------------
@@ -450,17 +467,17 @@ PR_plot <- ggplot(growth_vs_share_inc, aes(x = PR, y = wage_growth)) +
 income_grid <- grid.arrange(INR_plot, IR_plot, PNR_plot, PR_plot, ncol = 2)
 
 # Save combined plot
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/income_growth_vs_dimension_share.png", 
+ggsave(file.path(RESULTS_DIR, "income_growth_vs_dimension_share.png"), 
        plot = income_grid, width = 12, height = 8)
 
 # Save individual plots for detailed analysis
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/income_growth_vs_INR.png", 
+ggsave(file.path(RESULTS_DIR, "income_growth_vs_INR.png"), 
        plot = INR_plot, width = 6, height = 4)  
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/income_growth_vs_IR.png", 
+ggsave(file.path(RESULTS_DIR, "income_growth_vs_IR.png"), 
        plot = IR_plot, width = 6, height = 4)
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/income_growth_vs_PNR.png", 
+ggsave(file.path(RESULTS_DIR, "income_growth_vs_PNR.png"), 
        plot = PNR_plot, width = 6, height = 4)
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/income_growth_vs_PR.png", 
+ggsave(file.path(RESULTS_DIR, "income_growth_vs_PR.png"), 
        plot = PR_plot, width = 6, height = 4)
 
 # 5.2 Employment growth analysis
@@ -509,17 +526,17 @@ PR_emp_plot <- ggplot(growth_vs_share_emp, aes(x = PR, y = employment_growth)) +
 emp_grid <- grid.arrange(INR_emp_plot, IR_emp_plot, PNR_emp_plot, PR_emp_plot, ncol = 2)
 
 # Save combined plot
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/employment_growth_vs_dimension_share.png", 
+ggsave(file.path(RESULTS_DIR, "employment_growth_vs_dimension_share.png"), 
        plot = emp_grid, width = 12, height = 8)
 
 # Save individual plots
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/employment_growth_vs_INR.png", 
+ggsave(file.path(RESULTS_DIR, "employment_growth_vs_INR.png"), 
        plot = INR_emp_plot, width = 6, height = 4)  
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/employment_growth_vs_IR.png", 
+ggsave(file.path(RESULTS_DIR, "employment_growth_vs_IR.png"), 
        plot = IR_emp_plot, width = 6, height = 4)
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/employment_growth_vs_PNR.png", 
+ggsave(file.path(RESULTS_DIR, "employment_growth_vs_PNR.png"), 
        plot = PNR_emp_plot, width = 6, height = 4)
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/employment_growth_vs_PR.png", 
+ggsave(file.path(RESULTS_DIR, "employment_growth_vs_PR.png"), 
        plot = PR_emp_plot, width = 6, height = 4)
 
 # -----------------------------------------------------------------------------
@@ -535,7 +552,7 @@ inc_growth_tidy <- tidy(inc_growth_model, conf.int = TRUE)
 # Display and save regression table
 knitr::kable(inc_growth_tidy, digits = 3, 
              caption = "Regression: Income Growth vs. Task Dimensions")
-write.csv(inc_growth_tidy, "/Users/sidsatya/dev/ailabor/results/dim_4_results/income_growth_regression.csv", 
+write.csv(inc_growth_tidy, file.path(RESULTS_DIR, "income_growth_regression.csv"), 
           row.names = FALSE)
 
 # -----------------------------------------------------------------------------
@@ -551,7 +568,7 @@ emp_growth_tidy <- tidy(emp_growth_model, conf.int = TRUE)
 # Display and save regression table
 knitr::kable(emp_growth_tidy, digits = 3, 
              caption = "Regression: Employment Growth vs. Task Dimensions")
-write.csv(emp_growth_tidy, "/Users/sidsatya/dev/ailabor/results/dim_4_results/employment_growth_regression.csv", 
+write.csv(emp_growth_tidy, file.path(RESULTS_DIR, "employment_growth_regression.csv"), 
           row.names = FALSE)
 
 # -----------------------------------------------------------------------------
@@ -607,13 +624,9 @@ bubble_plot_no_outliers <- ggplot(growth_vs_share_no_outliers,
   theme(legend.position = "bottom", legend.box = "vertical")
 
 # Save both visualizations to files
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/growth_bubble_plot.png", 
+ggsave(file.path(RESULTS_DIR, "growth_bubble_plot.png"), 
        plot = bubble_plot, width = 12, height = 8)
-ggsave("/Users/sidsatya/dev/ailabor/results/dim_4_results/growth_bubble_plot_no_outliers.png", 
+ggsave(file.path(RESULTS_DIR, "growth_bubble_plot_no_outliers.png"), 
        plot = bubble_plot_no_outliers, width = 12, height = 8)
-
-# Display the plots
-print(bubble_plot)
-print(bubble_plot_no_outliers)
 
 # ---- END OF SCRIPT ----

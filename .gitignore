@@ -1,1 +1,4 @@
 .env
+data/ipums_healthcare_data.csv
+task_classification/data/*
+Rplots.pdf
