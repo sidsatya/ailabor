@@ -1,4 +1,4 @@
-# AI Labor Project - Healthcare Occupation Task Analysis
+# The Impact of AI on Healthcare (Still in Progress)
 
 This repository contains code and data for analyzing task dimensions in healthcare occupations and their relationship to wage and employment outcomes over time. The project uses O*NET task data combined with IPUMS employment data to classify healthcare occupations along different task dimensions and analyze economic trends.
 
