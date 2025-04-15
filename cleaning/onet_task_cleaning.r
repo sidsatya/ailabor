@@ -10,6 +10,16 @@
 # Load required libraries
 library(data.table)
 
+# Check if ROOT_DIR exists as an R variable in the global environment
+if (exists("ROOT_DIR", envir = .GlobalEnv)) {
+  ROOT_DIR <- get("ROOT_DIR", envir = .GlobalEnv)
+  message("Using ROOT_DIR from global R environment: ", ROOT_DIR)
+} else {
+  # Fallback: set manually if not found (though it should be if run via run_main_R_files.R)
+  ROOT_DIR <- "/Users/sidsatya/dev/ailabor"  # Change to your actual project path
+  warning("ROOT_DIR not found in R's global environment. Using fallback path: ", ROOT_DIR)
+}
+
 # 1. DATA LOADING
 # Load the main O*NET task statements dataset
 onet_data <- fread("data/onet/task_statements.csv")

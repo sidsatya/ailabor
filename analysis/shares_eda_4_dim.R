@@ -19,16 +19,14 @@ library(gridExtra)
 library(broom)
 
 
-# Check if ROOT_DIR is defined in the environment
-root_dir_env <- Sys.getenv("ROOT_DIR", unset = NA)
-
-if (is.na(root_dir_env) || root_dir_env == "") {
-  # Fallback: set manually
-  ROOT_DIR <- "/Users/sidsatya/dev/ailabor"  # Change to your actual project path
-  message("ROOT_DIR not found in environment. Using fallback path: ", ROOT_DIR)
+# Check if ROOT_DIR exists as an R variable in the global environment
+if (exists("ROOT_DIR", envir = .GlobalEnv)) {
+  ROOT_DIR <- get("ROOT_DIR", envir = .GlobalEnv)
+  message("Using ROOT_DIR from global R environment: ", ROOT_DIR)
 } else {
-  ROOT_DIR <- root_dir_env
-  message("Using ROOT_DIR from environment: ", ROOT_DIR)
+  # Fallback: set manually if not found (though it should be if run via run_main_R_files.R)
+  ROOT_DIR <- "/Users/sidsatya/dev/ailabor"  # Change to your actual project path
+  warning("ROOT_DIR not found in R's global environment. Using fallback path: ", ROOT_DIR)
 }
 
 # -----------------------------------------------------------------------------

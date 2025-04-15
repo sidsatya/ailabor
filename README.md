@@ -53,8 +53,9 @@ The analysis examines how these task dimensions relate to wages, employment grow
 
 ### Cleaning Scripts
 
-- `ipums_cleaning.r`
-  - Filter IPUMS data for healthcare-related industries
+- `ipums_extract_and_clean.r`
+  - Extract IPUMS data for ACS from 2008-2023
+  - Filter ACS data for healthcare-related industries
   - Harmonize occupation codes (SOC) across 2008-2023
   - Apply crosswalks to ensure consistent occupation coding over time
   - Output: `ipums_healthcare_data.csv`
@@ -78,7 +79,7 @@ The analysis examines how these task dimensions relate to wages, employment grow
 
 ## Data Requirements
 
-For replication:
+For replication, all data files should already be included in the repository or be part of the extraction in the code files. However, if you are curious, some key files are:
 
 ### O*NET
 - `onet_task_statements_classified_4_dim.csv`
@@ -91,40 +92,45 @@ For replication:
   - `OCCSOC`
   - `INCWAGE`
   - `PERWT`
+  - `COUNTYFIP`
+  - `STATEFIP`
 
-### Crosswalks
+### SOC Crosswalks
 - SOC 2000 to 2010
 - SOC 2010 to 2018
 
 ## How to Run the Code
 
 ### Step 1: Setup
-```r
-install.packages(c("data.table", "dplyr", "tidyr", "ggplot2", "knitr", 
-                 "scales", "stringr", "gridExtra", "broom", "ipumsr",
-                 "stringdist", "readr"))
-```
 
-### Step 2: Data Preparation
-1. Place O*NET classification files in `data/onet/`
-2. Run:
-```r
-source("cleaning/compute_onet_task_shares.r")
-```
-3. If working with raw IPUMS data, place the extract in `data/ipums/` and run:
-```r
-source("cleaning/ipums_cleaning.r")
-```
+This project uses `renv` for dependency management. To set up the environment and install the required packages, follow these steps:
 
-### Step 3: Analysis
-- For 4-dimension results:
-```r
-source("analysis/shares_eda_4_dim.R")
-```
-- For 8-dimension results:
-```r
-source("analysis/shares_eda_8_dim.R")
-```
+1. Ensure that the `renv` package is installed. If not, install it using:
+  ```r
+  install.packages("renv")
+  ```
+
+2. Initialize the `renv` environment using the lockfile in this directory. Run:
+  ```r
+  renv::restore()
+  ```
+  This will install all the required packages specified in the `renv.lock` file.
+
+3. If the `renv` environment does not boot up automatically, you can activate it manually by running:
+  ```r
+  renv::activate()
+  ```
+
+4. Request an IPUMS API Key
+To run the data extraction, you must follow the steps at [https://developer.ipums.org/docs/v2/get-started/](https://developer.ipums.org/docs/v2/get-started/) to create an IPUMS account and get an API key. Then, you must create a `.env` file in the project's root directory and set `IPUMS_API_KEY=YOUR_API_KEY`.
+
+Once the environment is set up, you can proceed with the data preparation and analysis steps.
+
+### Step 2: Running Code 
+
+Edit line 4 of `run_main_R_files.R` and set it to your local path to this project's root directory. Then, you can just run the code in `run_main_files.R`! 
+
+*Important Note!!*: When I run the code on my machine (MacBook Pro 2019, 8GB), I run out of memory after extracting the ACS data when running `ipums_extract_and_clean.r`. If the extraction fails, you may find it helpful to restart your machine and then run the code again. If the extraction succeeds, it should save the extracted files in `data/ipums`. However, if the code then fails or segfaults when reading this extracted data (also happens to me at times), you might find it helpful to restart your machine again and then re-run the code. If data is already existing in the `data/ipums` folder, the code will not rerun the extraction and only rely on already extracted data. 
 
 ## Output Files
 Output files will be saved in `results/dim_4_results/` and `results/dim_8_results/`
@@ -133,7 +139,7 @@ Output files will be saved in `results/dim_4_results/` and `results/dim_8_result
 - **Regression Tables**: Output from statistical models
 - **Bubble Plots**: Joint wage/employment/size plots
 
-## Task Classification 
+## Task Classification using GPT
 
 ### 4-Dimension
 - INR: Interpersonal, Non-Routine
@@ -149,11 +155,12 @@ Adds a manual/non-manual distinction to the above. For example:
 
 Task classification was done using OpenAI's GPT-4o-mini model. 
 
-## Replication Instructions
+## Replication Instructions for Task Classification (Optional, you don't have to do this)
 
 To fully replicate results:
-1. Place the required data in appropriate directories
-2. Run `gpt_classification.py`
+1. Create an [OpenAI API](https://platform.openai.com/) account, and add about $5 to your account. 
+2. Add `OPENAI_API_KEY=YOUR_API_KEY` to your `.env` file. 
+3. Run `gpt_classification.py`
 
 Pre-processed files are also available for analysis without running the task.
 

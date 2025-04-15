@@ -5,15 +5,14 @@ library(readr)
 library(stringdist)  # Add this library for string similarity
 library(dotenv)
 
-# Check if ROOT_DIR is defined in the environment
-root_dir_env <- Sys.getenv("ROOT_DIR", unset = NA)
-if (is.na(root_dir_env) || root_dir_env == "") {
-  # Fallback: set manually
-  ROOT_DIR <- "/Users/sidsatya/dev/ailabor"  # Change to your actual project path
-  message("ROOT_DIR not found in environment. Using fallback path: ", ROOT_DIR)
+# Check if ROOT_DIR exists as an R variable in the global environment
+if (exists("ROOT_DIR", envir = .GlobalEnv)) {
+  ROOT_DIR <- get("ROOT_DIR", envir = .GlobalEnv)
+  message("Using ROOT_DIR from global R environment: ", ROOT_DIR)
 } else {
-  ROOT_DIR <- root_dir_env
-  message("Using ROOT_DIR from environment: ", ROOT_DIR)
+  # Fallback: set manually if not found (though it should be if run via run_main_R_files.R)
+  ROOT_DIR <- "/Users/sidsatya/dev/ailabor"  # Change to your actual project path
+  warning("ROOT_DIR not found in R's global environment. Using fallback path: ", ROOT_DIR)
 }
 
 # Define the download directory
@@ -54,7 +53,7 @@ if (length(existing_ddi_files) > 0) {
       "us2014a", "us2015a", "us2016a", "us2017a", "us2018a",
       "us2019a", "us2020a", "us2021a", "us2022a", "us2023a"
     ),
-    variables = c("YEAR", "PERWT", "INCWAGE", "OCCSOC", "IND1990"),
+    variables = c("YEAR", "PERWT", "INCWAGE", "OCCSOC", "IND1990", "COUNTYFIP", "STATEFIP"),
     data_format= "csv",
     data_structure="rectangular",
     case_select_who="individuals",
@@ -115,6 +114,10 @@ max_year <- max(filtered_data$YEAR)
 cat("The data contains records from", min_year, "to", max_year, "\n")
 
 # section: Harmonizing OCCSOC codes
+# crosswalks taken from: 
+# 1. https://www.bls.gov/soc/soc_2000_to_2010_crosswalk.xls
+# 2. https://www.bls.gov/soc/2018/soc_2010_to_2018_crosswalk.xlsx
+# 3. https://usa.ipums.org/usa/resources/volii/occ_occsoc_crosswalk_2000_onward_without_code_descriptions.csv
 master_crosswalk_data <- fread(file.path(ROOT_DIR,"data/occsoc_crosswalks/occsoc_crosswalk_2000_onward_without_code_descriptions.csv"))
 crosswalk_2000_to_2010 <- fread(file.path(ROOT_DIR, "data/occsoc_crosswalks/soc_2000_to_2010_crosswalk.csv"))
 crosswalk_2010_to_2018 <- fread(file.path(ROOT_DIR, "data/occsoc_crosswalks/soc_2010_to_2018_crosswalk.csv"))
