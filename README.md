@@ -170,9 +170,11 @@ Intermediate data files will be saved to `task_classification/data`. Final outpu
 - `data/onet/onet_task_statements_classified_8_dim.csv`
 
 ## TODO
-- Analyze changes in task shares over time. Think about core vs. supplementary tasks and date as well.
-- Double check and understand differences in wage growth (check relative vs. absolute growth)
-- Check that replication can be run top to bottom and include full instructions.
+- Analyze changes in task shares over time. Think about core vs. supplementary tasks and date as well. Finish `construct_historical_onet_task_statements.R`.
+- Write extraction of US PTO Patent Data and arXiv papers. 
+- Write matching of historical O*NET task data to patent data and arXiv papers. 
+- Compute AI-exposure score. Consider expanding analysis to general software and automation technologies like in Webb (2020)
+- Shift-share analysis for state-county-occupation-industry obs. 
 
 ---
 
