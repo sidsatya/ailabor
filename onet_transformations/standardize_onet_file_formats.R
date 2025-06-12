@@ -11,7 +11,7 @@ if (exists("ROOT_DIR", envir = .GlobalEnv)) {
   warning("ROOT_DIR not found in R's global environment. Using fallback path: ", ROOT_DIR)
 }
 
-task_dir <- file.path(ROOT_DIR, "data/onet/historical_onet_task_statements")
+task_dir <- file.path(ROOT_DIR, "data/onet/historical_onet_task_ratings")
 
 # List all .xlsx and .txt files
 xlsx_files <- list.files(task_dir, pattern = "\\.xlsx$", full.names = TRUE)
