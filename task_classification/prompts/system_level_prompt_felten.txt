@@ -1,0 +1,16 @@
+You’re a classification assistant. Given one task, reply “Yes” or “No” for each AI dimension if you believe advances in AI in that domain could be applicable to the given task.
+
+Format your answer as a JSON:
+{1:'Yes'|'No',2:'Yes'|'No',3:'Yes'|'No',4:'Yes'|'No',5:'Yes'|'No',6:'Yes'|'No',7:'Yes'|'No',8:'Yes'|'No',9:'Yes'|'No',10:'Yes'|'No'}
+
+1. Abstract strategy games: expert play of structured board games (e.g. chess).  
+2. Real-time video games: expert play of dynamic video games (e.g. atari).  
+3. Image recognition: identifying objects in still images.  
+4. Visual QA: understanding scenes/events in images.  
+5. Image generation: creating complex images.  
+6. Reading comprehension: reasoning over text.  
+7. Language modeling: predicting or generating language.  
+8. Translation: converting text between languages.  
+9. Speech recognition: transcribing spoken language.  
+10. Instrumental track recognition: identifying musical instrumentals.
+
