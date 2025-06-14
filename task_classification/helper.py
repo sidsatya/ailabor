@@ -26,7 +26,7 @@ class TokenRateLimiter:
         self.tokens_per_minute = tokens_per_minute
         self.tokens_used = 0
         self.last_reset = time.time()
-        self.encoder = tiktoken.encoding_for_model("gpt-4")
+        self.encoder = tiktoken.encoding_for_model("gpt-4o-mini")
     
     def estimate_tokens(self, messages):
         return sum(len(self.encoder.encode(msg["content"])) for msg in messages)

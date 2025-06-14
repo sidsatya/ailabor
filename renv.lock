@@ -798,6 +798,17 @@
       ],
       "Hash": "c19df082ba346b0ffa6f833e92de34d1"
     },
+    "stargazer": {
+      "Package": "stargazer",
+      "Version": "5.2.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "stats",
+        "utils"
+      ],
+      "Hash": "d313fa83180f3376229f98633813cd31"
+    },
     "stringdist": {
       "Package": "stringdist",
       "Version": "0.9.15",
