@@ -7,11 +7,11 @@ print("Current working directory:", os.getcwd())
 
 ### BEFORE RUNNING THIS SCRIPT, MAKE SURE TO SET UP THE ENVIRONMENT VARIABLES
 num_samples = 3
-prompt_path = "prompts/system_level_prompt_felten.txt"
-intermediate_savepath = "intermediate_results/classified_tasks_felten_intermediate.csv"
-final_savepath = "classified_tasks_felten.csv"
+prompt_path = "prompts/system_level_prompt_16_dim.txt"
+intermediate_savepath = "intermediate_results/classified_tasks_16_dim_intermediate.csv"
+final_savepath = "classified_tasks_16_dim.csv"
 
-onet_output = "../data/onet/onet_task_statements_classified_felten.csv"
+onet_output = "../data/onet/onet_task_statements_classified_16_dim.csv"
 
 # Healthcare occupations only
 datapath = "/Users/sidsatya/dev/ailabor/onet_transformations/intermediate_data/task_data_healthcare_filtered.csv"

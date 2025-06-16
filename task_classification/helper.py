@@ -14,8 +14,8 @@ from time import sleep
 load_dotenv()  # Load environment variables from .env file
 # Ensure the OpenAI API key is set in the environment
 
-if 'OPENAI_API_KEY' not in os.environ:
-    raise ValueError("OPENAI_API_KEY environment variable not set.")
+if 'OPENAI_API_KEY_BROWN' not in os.environ:
+    raise ValueError("OPENAI_API_KEY_BROWN environment variable not set.")
 
 def read_system_prompt(file_path: str) -> str:
     with open(file_path, 'r') as f:
@@ -111,7 +111,7 @@ def process_dataframe(df: pd.DataFrame
                       , intermediate_savepath: str = "intermediate_results/classified_tasks_intermediate.csv"
                       , final_savepath: str = "classified_tasks_final.csv") -> pd.DataFrame:
     os.chdir(os.path.dirname(__file__))
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY_BROWN")) # TODO: YOU NEED TO SET THIS API KEY
     
     # Create output directory
     output_dir = "data/"
