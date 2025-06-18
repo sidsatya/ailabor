@@ -14,7 +14,7 @@ final_savepath = "classified_tasks_16_dim.csv"
 onet_output = "../data/onet/onet_task_statements_classified_16_dim.csv"
 
 # Healthcare occupations only
-datapath = "/Users/sidsatya/dev/ailabor/onet_transformations/intermediate_data/task_data_healthcare_filtered.csv"
+datapath = "/Users/sidsatya/dev/ailabor/onet_transformations/intermediate_data/unique_task_statements_healthcare.csv"
 onet_data_healthcare_occs = pd.read_csv(datapath)
 
 
