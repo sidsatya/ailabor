@@ -17,6 +17,7 @@ library(scales)
 library(stringr)
 library(gridExtra)
 library(broom)
+library(stargazer)
 
 
 # Check if ROOT_DIR exists as an R variable in the global environment
@@ -683,9 +684,14 @@ inc_growth_tidy <- tidy(inc_growth_model, conf.int = TRUE)
 
 # Display and save regression table
 knitr::kable(inc_growth_tidy, digits = 3, 
-             caption = "Regression: Income Growth vs. Task Dimensions")
+       caption = "Regression: Income Growth vs. Task Dimensions")
 write.csv(inc_growth_tidy, file.path(RESULTS_DIR, "income_growth_regression.csv"), 
-          row.names = FALSE)
+      row.names = FALSE)
+
+# Output regression table as LaTeX using stargazer
+stargazer(inc_growth_model, type = "latex", 
+      title = "Regression: Income Growth vs. Task Dimensions", 
+      out = file.path(RESULTS_DIR, "income_growth_regression.tex"))
 
 # Visualize PCA loadings
 # Extract PC loadings
@@ -773,6 +779,11 @@ knitr::kable(emp_growth_tidy, digits = 3,
              caption = "Regression: Employment Growth vs. Task Dimensions")
 write.csv(emp_growth_tidy, file.path(RESULTS_DIR, "employment_growth_regression.csv"), 
           row.names = FALSE)
+
+# Output regression table as LaTeX using stargazer
+stargazer(emp_growth_model, type = "latex", 
+      title = "Regression: Employment Growth vs. Task Dimensions", 
+      out = file.path(RESULTS_DIR, "employment_growth_regression.tex"))
 
 # Visualize PCA loadings for employment analysis
 # Extract PC loadings
