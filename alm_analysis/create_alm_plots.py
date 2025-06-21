@@ -6,14 +6,14 @@ import os
 import numpy as np
 import itertools
 
-def filter_data(data, emp_share_col): 
+def filter_data(data, emp_share_col, intensity_col): 
     '''
     1. Drop observations that do not have a task_intensity defined
     2. Drop observations that do not have a relevant employment_share_defined
     3. Drop any occ-year combination that has any unclassified tasks. 
     '''
     # Drop all observations that do not have a task intensity defined
-    data_drop_intensities = data.dropna(subset=['task_intensity']).copy()
+    data_drop_intensities = data.dropna(subset=[intensity_col]).copy()
 
     # Drop all observations that do not have a pct_year_tot_emp defined
     data_drop_emp = data_drop_intensities.dropna(subset=[emp_share_col]).copy()
@@ -28,6 +28,51 @@ def filter_data(data, emp_share_col):
     print("There are {} occupations in the filtered data that we can use for further analysis.".format(len(data_final.groupby('O*NET 2018 SOC Code'))))
 
     return data_final
+
+def diagnostics_missing(df, emp_col, out_prefix):
+    # mark per-row classification success
+    df = df.copy()
+    df['row_classified'] = df[
+        ['interpersonal_mean','routine_mean','manual_mean','high_codifiable_mean']
+    ].notna().all(axis=1)
+
+    # occ-year summary
+    occyr = (df.groupby(['O*NET 2018 SOC Code','ONET_release_year'], as_index=False)
+               .agg(total_rows      =('row_classified','size'),
+                    classified_rows =('row_classified','sum'),
+                    emp_share       =(emp_col,'first')))
+    occyr['kept'] = occyr['total_rows'] == occyr['classified_rows']
+
+    # ---------- console summary ----------
+    print("\n===== missing-task diagnostics =====")
+    print(f"total occ-years: {len(occyr)}")
+    print(f"kept occ-years : {occyr['kept'].sum()}")
+    print(f"dropped occ-yrs: {(~occyr['kept']).sum()}")
+
+    yearly = (occyr.groupby(['ONET_release_year','kept'])
+                    .agg(emp =('emp_share','sum'))
+                    .reset_index()
+                    .pivot(index='ONET_release_year', columns='kept', values='emp')
+                    .rename(columns={True:'emp_kept', False:'emp_dropped'}))
+    try: 
+        yearly['pct_dropped'] = yearly['emp_dropped'] / (yearly['emp_kept']+yearly['emp_dropped'])
+    except KeyError: 
+        yearly['pct_dropped'] = np.nan
+    print("\nshare of HC employment dropped by year (first 10 rows):")
+    print(yearly.head(10))
+
+    # ---------- write to disk ----------
+    os.makedirs('diagnostics', exist_ok=True)
+    yearly.to_csv(f'diagnostics/{out_prefix}_yearly_coverage.csv')
+
+    dropped_top = (occyr[~occyr['kept']]
+                   .groupby('O*NET 2018 SOC Code', as_index=False)
+                   .agg(avg_emp=('emp_share','mean'),
+                        years   =('ONET_release_year','nunique'))
+                   .sort_values('avg_emp', ascending=False)
+                   .head(30))
+    dropped_top.to_csv(f'diagnostics/{out_prefix}_top_dropped_occ.csv', index=False)
+    print(f"\n(top 30 dropped occupations written to diagnostics/{out_prefix}_top_dropped_occ.csv)")
 
 def get_all_possible_classifications(choices_per_dimension): 
     '''
@@ -91,55 +136,46 @@ def percentile_of_midpoint(x_new, x_ecdf, cdf_vals, weights_norm):
     cdf_lower = 0.0 if idx == 0 else cdf_vals[idx-1]
     return cdf_lower + weights_norm[idx]/2.0                 # mid-point
 
-def create_empirical_distributions(data_min_year, weight_col, all_classifications): 
+def create_empirical_distributions(data_min_year, weight_col, all_classifications, intensity_col='task_intensity'): 
     '''
     For every occupation in the minimum year, compute the percentiles of task intensity, weighted by employment share
     '''
 
     # Group by occupation-classification and sum task intensity and average the employment share
-    grp_occ_class = data_min_year.groupby(['O*NET 2018 SOC Code', 'classification']).agg({
-        'task_intensity': 'sum',
-        weight_col: 'mean'
-    }).reset_index()
+    grp = (data_min_year
+           .groupby(['O*NET 2018 SOC Code','classification'], as_index=False)
+           .agg(intensity_col=(intensity_col,'sum'),
+                weight=('bucket_weight','first')))
+
+    # Check if the intensity_col is in the columns
+    if 'intensity_col' in grp.columns:
+        # rename to the value of intensity_col
+        grp = grp.rename(columns={'intensity_col': intensity_col})
 
     # Check to make sure each occ-class exists otherwise add a row with 0 task intensity and the mean employment share
-    new_rows = []
-    for occ_code in grp_occ_class['O*NET 2018 SOC Code'].unique():
-        for classification in all_classifications:
-            if not ((grp_occ_class['O*NET 2018 SOC Code'] == occ_code) & (grp_occ_class['classification'] == classification)).any():
-                new_row = {
-                    'O*NET 2018 SOC Code': occ_code,
-                    'classification': classification,
-                    'task_intensity': 0,
-                    weight_col: grp_occ_class[grp_occ_class['O*NET 2018 SOC Code'] == occ_code][weight_col].mean()
-                }
-                new_rows.append(new_row)
+    # add missing buckets with zero intensity *and zero weight*
+    missing = []
+    for occ in grp['O*NET 2018 SOC Code'].unique():
+        for cls in all_classifications:
+            if not ((grp['O*NET 2018 SOC Code']==occ) & (grp['classification']==cls)).any():
+                missing.append({'O*NET 2018 SOC Code':occ,
+                                'classification':cls,
+                                intensity_col:0.0,
+                                'weight':0.0})        # ← weight 0, not mean
+    if missing:
+        grp = pd.concat([grp, pd.DataFrame(missing)], ignore_index=True)
 
-    if new_rows:
-        grp_occ_class = pd.concat(
-            [grp_occ_class, pd.DataFrame(new_rows)],
-            ignore_index=True
-        )
+    ecdf = {}
+    for cls in all_classifications:
+        sub = grp[grp['classification']==cls]
+        x, cdf = weighted_ecdf(sub[intensity_col].values,
+                               sub['weight'].values)
+        w_norm = sub['weight'].values[np.argsort(sub[intensity_col].values)]
+        w_norm = w_norm / w_norm.sum()                # safety
+        ecdf[cls] = (x, cdf, w_norm)
+    return ecdf
 
-    # Compute ECDF for each classification dimension
-    ecdf_results = {}
-    for classification in all_classifications:
-        # Filter for the current classification
-        filtered_data = grp_occ_class[grp_occ_class['classification'] == classification]
-
-        # Get values and weights
-        values = filtered_data['task_intensity'].values
-        weights = filtered_data[weight_col].values
-
-        # Compute ECDF
-        x_ecdf, cdf_vals = weighted_ecdf(values, weights)
-        weights_norm = weights[np.argsort(values)] / weights.sum()
-
-        # Store results
-        ecdf_results[classification] = (x_ecdf, cdf_vals, weights_norm)
-    return ecdf_results
-
-def compute_percentiles_for_classification(val, ecdf_results, classification): 
+def compute_percentiles_for_classification(val, ecdf_results, classification, intensity_col='task_intensity'): 
     """
     Compute percentiles for each task intensity based on the empirical distributions.
     
@@ -152,19 +188,27 @@ def compute_percentiles_for_classification(val, ecdf_results, classification):
     x_ecdf, cdf_vals, w_norm = ecdf_results[classification]
     return percentile_of_midpoint(val, x_ecdf, cdf_vals, w_norm)
     
-def create_filtered_data_grp(data, emp_share_col, all_classifications):
+def create_filtered_data_grp(data, emp_share_col, all_classifications, intensity_col='task_intensity'):
+    print(data.columns)
     # 1. collapse to occupation-year-bucket
     occ_year_cls = (
         data.groupby(['O*NET 2018 SOC Code', 'ONET_release_year', 'classification'],
                      as_index=False)
-            .agg(task_intensity=('task_intensity', 'sum'))
+            .agg(intensity_col=(intensity_col, 'sum'))
     )
 
+    # Check if the intensity_col is in the columns
+    if 'intensity_col' in occ_year_cls.columns:
+        # rename to the value of intensity_col
+        occ_year_cls = occ_year_cls.rename(columns={'intensity_col': intensity_col})
+
     # 2. total intensity per occupation-year  (denominator for shares)
+    print(intensity_col)
+    print(occ_year_cls.columns)
     total_int = (occ_year_cls.groupby(['O*NET 2018 SOC Code', 'ONET_release_year'],
-                                      as_index=False)['task_intensity']
+                                      as_index=False)[intensity_col]
                                .sum()
-                               .rename(columns={'task_intensity':'total_intensity'}))
+                               .rename(columns={intensity_col:'total_intensity'}))
 
     # 3. bring in employment share
     occ_year_emp = (
@@ -187,18 +231,16 @@ def create_filtered_data_grp(data, emp_share_col, all_classifications):
             on=['O*NET 2018 SOC Code', 'ONET_release_year', 'classification'],
             how='left'
         )
-    df['task_intensity'] = df['task_intensity'].fillna(0.0)
+    df[intensity_col] = df[intensity_col].fillna(0.0)
 
     # 6. compute bucket weight  w = emp_share * intensity / total_intensity
     df['bucket_weight'] = np.where(
         df['total_intensity'] > 0,
-        df[emp_share_col] * df['task_intensity'] / df['total_intensity'],
+        df[emp_share_col] * df[intensity_col] / df['total_intensity'],
         0.0
     )
 
     return df
-
-
 
 def create_alm_plots(data, all_classifications, y_col, save_file, output_dir='output_plots'):
     """
@@ -215,41 +257,127 @@ def create_alm_plots(data, all_classifications, y_col, save_file, output_dir='ou
 
     # For each year, compute the mean percentile for each classification
     data_year_class_grp = (
-        filtered_data_grp
+        data
         .groupby(['ONET_release_year', 'classification'])
         .apply(lambda df: np.average(df['percentile'],
-                                    weights=df['bucket_weight']))
+                                    weights=df['bucket_weight']), include_groups=False)
         .reset_index(name='percentile')
     )
     # Plot the percentiles for each classification over the years
     plt.figure(figsize=(12, 8))
 
-    num_classes = len(all_classifications)
-    colors = cm.get_cmap('tab20', num_classes)
+    # Define color mapping based on classification labels
+    red_classifications = sorted([c for c in all_classifications if 'R' in c or 'HC' in c])
+    blue_classifications = sorted([c for c in all_classifications if 'NR' in c or 'LC' in c])
+    green_classifications = blue_classifications # Keep red vs green logic
 
-    for idx, classification in enumerate(all_classifications):
+    num_red = len(red_classifications)
+    num_green = len(green_classifications)
+
+    # Get colormaps for reddish/orangish and greenish colors
+    red_cmap = plt.get_cmap('YlOrRd')
+    green_cmap = plt.get_cmap('YlGn') # Changed to a green colormap
+
+    # Generate colors from the colormaps, avoiding the lightest shades
+    red_colors = red_cmap(np.linspace(0.3, 1.0, num_red)) if num_red > 0 else []
+    green_colors = green_cmap(np.linspace(0.3, 1.0, num_green)) if num_green > 0 else []
+
+    color_map = {}
+    for i, classification in enumerate(red_classifications):
+        color_map[classification] = red_colors[i]
+    for i, classification in enumerate(green_classifications):
+        color_map[classification] = green_colors[i]
+
+    for classification in sorted(all_classifications):
         subset = data_year_class_grp[data_year_class_grp['classification'] == classification]
-        # Vary alpha (opacity) between 0.5 and 1.0 for visual distinction
-        alpha = 0.5 + 0.5 * (idx / max(1, num_classes - 1))
+        if subset.empty:
+            continue
+        
+        color = color_map.get(classification, 'gray') # Default for un-matched
+
         plt.plot(
             subset['ONET_release_year'],
             subset[y_col],
             marker='o',
             label=classification,
-            color=colors(idx),
-            alpha=alpha
+            color=color,
+            alpha=0.5 # Use a constant alpha for all lines
         )
     plt.title('Percentiles of Mean Task Contribution by Classification Over Years')
     plt.xlabel('Year')
     plt.ylabel('Percentile')
-    plt.xticks(subset['ONET_release_year'].unique())
-    plt.legend(title='Classification')
+    plt.xticks(data_year_class_grp['ONET_release_year'].unique())
+    plt.legend(title='Classification', bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, save_file))
+    plt.savefig(os.path.join(output_dir, save_file), bbox_inches='tight')
 
+def create_between_occ_composition_plots(data, all_classifications, y_col, emp_share_col, intensity_col, save_file, output_dir='output_plots'):
+    """
+    Create ALM plots for task intensity distributions across different classifications.
+    
+    Parameters:
+    - data: DataFrame with task intensity and employment share.
+    - y_col: Column name for plotting.
+    - output_dir: Directory to save the plots.
+    """
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
 
+    # For each year, compute the mean percentile for each classification
+    data_year_class_grp = (
+        data
+        .groupby(['ONET_release_year', 'classification'])
+        .apply(lambda df: (df[emp_share_col] * df[intensity_col]).sum())
+        .reset_index(name='percentile')
+    )
+    
+    # Plot the percentiles for each classification over the years
+    plt.figure(figsize=(12, 8))
 
+    # Define color mapping based on classification labels
+    red_classifications = sorted([c for c in all_classifications if 'R' in c or 'HC' in c])
+    blue_classifications = sorted([c for c in all_classifications if 'NR' in c or 'LC' in c])
+    green_classifications = blue_classifications # Keep red vs green logic
 
+    num_red = len(red_classifications)
+    num_green = len(green_classifications)
+
+    # Get colormaps for reddish/orangish and greenish colors
+    red_cmap = plt.get_cmap('YlOrRd')
+    green_cmap = plt.get_cmap('YlGn') # Changed to a green colormap
+
+    # Generate colors from the colormaps, avoiding the lightest shades
+    red_colors = red_cmap(np.linspace(0.3, 1.0, num_red)) if num_red > 0 else []
+    green_colors = green_cmap(np.linspace(0.3, 1.0, num_green)) if num_green > 0 else []
+
+    color_map = {}
+    for i, classification in enumerate(red_classifications):
+        color_map[classification] = red_colors[i]
+    for i, classification in enumerate(green_classifications):
+        color_map[classification] = green_colors[i]
+
+    for classification in sorted(all_classifications):
+        subset = data_year_class_grp[data_year_class_grp['classification'] == classification]
+        if subset.empty:
+            continue
+        
+        color = color_map.get(classification, 'gray') # Default for un-matched
+        plt.plot(
+            subset['ONET_release_year'],
+            subset[y_col],
+            marker='o',
+            label=classification,
+            color=color,
+            alpha=0.5 # Use a constant alpha for all lines
+        )
+    plt.title('Mean Task Contribution by Classification Over Years')
+    plt.xlabel('Year')
+    plt.ylabel('Mean Task Contribution')
+    plt.xticks(data_year_class_grp['ONET_release_year'].unique())
+    plt.legend(title='Classification', bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, save_file), bbox_inches='tight')
 
 
 
@@ -259,38 +387,74 @@ def create_alm_plots(data, all_classifications, y_col, save_file, output_dir='ou
 ailabor_root = '/Users/sidsatya/dev/ailabor'
 
 classification_types_and_cats = {'alm_classification': [['R', 'NR'], ['I', 'P'], ['M', 'NM']], 
-                                 'code_classification': [['HC', 'LC'], ['I', 'P'], ['M', 'NM']], 
-                                 'full_classification': [['R', 'NR'], ['I', 'P'], ['M', 'NM'], ['HC', 'LC']]} 
+                                 'code_classification': [['HC', 'LC'], ['I', 'P'], ['M', 'NM']]}
+                                 # 'full_classification': [['R', 'NR'], ['I', 'P'], ['M', 'NM'], ['HC', 'LC']]} 
 
+for scope in ['full', 'healthcare']: 
+    for task_scope in ['all', 'core']: 
+        for classification_type, choices_per_dimension in classification_types_and_cats.items():
+            print("#" * 50)
+            print(f"Processing {classification_type} for scope {scope} and task scope {task_scope}")
+    
+            # Generate all possible classifications
+            all_classifications = get_all_possible_classifications(choices_per_dimension)
 
+            # Define input and output file paths
+            in_file = f'alm_analysis/data/combined_{scope}_{task_scope}.csv'
+            out_file = f'{classification_type}_plot_{scope}_{task_scope}_tasks.png'
 
-classification_type = 'alm_classification'
-all_classifications = get_all_possible_classifications([['R', 'NR'], ['I', 'P'], ['M', 'NM']])
-in_file = 'alm_analysis/data/combined_healthcare.csv'
-out_file = 'alm_plot_healthcare_dataset.png'
+            emp_share_col = 'pct_healthcare_tot_emp' if scope == 'healthcare' else 'pct_year_tot_emp'
+            intensity_col = 'task_intensity' if task_scope == 'all' else 'task_intensity_core'
 
-# Generate ALM plot for full dataset
-full_data = pd.read_csv(os.path.join(ailabor_root, in_file))
-full_data['classification'] = full_data[classification_type]
+            # Generate ALM plot for full dataset
+            full_data = pd.read_csv(os.path.join(ailabor_root, in_file))
+            full_data['classification'] = full_data[classification_type]
 
-# Filter the data
-filtered_data = filter_data(full_data, 'pct_healthcare_tot_emp')
-filtered_data_grp = create_filtered_data_grp(filtered_data, 'pct_healthcare_tot_emp', all_classifications)
+            # Limit data to 2005 and later
+            baseline_year = 2006
+            full_data = full_data[full_data['ONET_release_year'] >= 2006].copy()
 
-# Create empirical distributions
-filtered_data_2003 = filtered_data_grp[filtered_data_grp['ONET_release_year'] == 2003].copy()
-ecdf_results = create_empirical_distributions(filtered_data_2003, 'bucket_weight', all_classifications)
+            # Filter the data
+            diagnostics_missing(full_data, emp_share_col,
+                    out_prefix=f'{scope}_{task_scope}_{classification_type}')
+            filtered_data = filter_data(full_data, emp_share_col, intensity_col)
+            filtered_data_grp = create_filtered_data_grp(filtered_data, emp_share_col, all_classifications, intensity_col)
 
-# Compute percentiles for each observation for each classification
-for c in all_classifications:
-    mask = filtered_data_grp['classification'] == c
-    # use task_intensity
-    filtered_data_grp.loc[mask, 'percentile'] = (
-        filtered_data_grp.loc[mask, 'task_intensity']
-            .apply(lambda x: compute_percentiles_for_classification(x,
-                                                                    ecdf_results,
-                                                                    c))
-    )
+            # Create empirical distributions
+            filtered_data_min_year = filtered_data_grp[filtered_data_grp['ONET_release_year'] == baseline_year].copy()
+            ecdf_results = create_empirical_distributions(filtered_data_min_year, 'bucket_weight', all_classifications, intensity_col)
 
-# Create ALM plots
-create_alm_plots(filtered_data_grp, all_classifications, 'percentile', out_file, output_dir=os.path.join(ailabor_root, 'results/alm_classification_results/'))
+            # Compute percentiles for each observation for each classification
+            for c in all_classifications:
+                mask = filtered_data_grp['classification'] == c
+                # use task_intensity
+                filtered_data_grp.loc[mask, 'percentile'] = (
+                    filtered_data_grp.loc[mask, intensity_col]
+                        .apply(lambda x: compute_percentiles_for_classification(x,
+                                                                                ecdf_results,
+                                                                                c))
+                )
+
+            baseline = (filtered_data_grp.query('ONET_release_year == @baseline_year')
+                                        .groupby('classification')
+                                        .apply(lambda d: np.average(d['percentile'],
+                                                                    weights=d['bucket_weight']), include_groups=False))
+            print("Sanity check: ", baseline.round(4))
+
+            # Create ALM plots
+            create_alm_plots(filtered_data_grp, all_classifications, 'percentile', out_file, output_dir=os.path.join(ailabor_root, 'results/alm_classification_results/'))
+
+            # Create between-occupation composition plots
+            create_between_occ_composition_plots(filtered_data_grp, all_classifications, 'percentile', emp_share_col, intensity_col, out_file.replace('.png', '_between_occ.png'), output_dir=os.path.join(ailabor_root, 'results/alm_classification_results/'))
+
+            # Save examples of each classification group if scope is healthcare
+            if scope == 'healthcare':
+                for classification in all_classifications:
+                    subset = filtered_data_grp[filtered_data_grp['classification'] == classification]
+                    if not subset.empty:
+                        subset.to_csv(os.path.join(ailabor_root, f'results/alm_classification_results/classification_examples/{classification_type}_{scope}_{task_scope}_{classification}_examples.csv'), index=False)
+            print(f"Completed processing for {classification_type} for scope {scope} and task scope {task_scope}")
+            print("#" * 50)
+
+            # save the filtered data for further analysis
+            filtered_data_grp.to_csv(os.path.join(ailabor_root, f'alm_analysis/plot_data/{classification_type}_{scope}_{task_scope}_filtered_data.csv'), index=False)
