@@ -1,260 +1,195 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import re
+import json
 
+# --- CONFIGURATION ---
+AILABOR_ROOT = '/Users/sidsatya/dev/ailabor/'
+CLASSIFIED_TASKS_PATH = os.path.join(AILABOR_ROOT, 'task_classification/data/classified_tasks_16_dim.csv')
+OES_DATA_PATH = os.path.join(AILABOR_ROOT, 'bls_transformations/output_data1/oes_data_filtered_soc_2018.csv')
+ALL_TASK_DATA_PATH = os.path.join(AILABOR_ROOT, 'onet_transformations/output_data/task_statements_harmonized_with_attributes.csv')
+OUTPUT_DIR = os.path.join(AILABOR_ROOT, 'alm_analysis/data1/')
+HEALTHCARE_NOT_IN_TASK_DATA_PATH = os.path.join(AILABOR_ROOT, 'bls_transformations/output_data1/oes_healthcare_not_in_task_data.csv')
 
-ailabor_root = '/Users/sidsatya/dev/ailabor/'
-
-# IMPORT the Classified Tasks data
-datapath = os.path.join(ailabor_root, 'task_classification/data/classified_tasks_16_dim.csv')
-classified_data = pd.read_csv(datapath)
+# --- HELPER FUNCTIONS ---
 
 def clean_text(text: str) -> str:
-    # 2) remove any occurrences of "x92"
-    text = re.sub(r'\x92', "'", text)
-    # 1) replace any punctuation (i.e. non-word, non-space) with a space
-    text = re.sub(r'[^\w\s]', '', text)
-    # 3) lowercase everything
-    text = text.lower()
-    # 4) collapse multiple whitespace into one, and strip ends
-    text = re.sub(r'\s+', ' ', text).strip()
+    """
+    Standardizes text by removing special characters, converting to lowercase,
+    and normalizing whitespace.
+    """
+    if not isinstance(text, str):
+        return ""
+    text = re.sub(r'\x92', "'", text)  # Replace non-standard apostrophe
+    text = re.sub(r'[^\w\s]', '', text)  # Remove punctuation
+    text = text.lower()  # Convert to lowercase
+    text = re.sub(r'\s+', ' ', text).strip()  # Collapse whitespace
     return text
 
-def read_gpt_label(label):
-    # label is formatted as a JSON string with 10 key-value pairs
-    label = label.replace("'", '"')  # Replace single quotes with double quotes
-    label = label.replace('nan', 'null')  # Replace 'nan' with 'null' for JSON compatibility
-    if label == 'gpt_label': 
-        return {} 
-    try:
-        label_dict = eval(label)  # Use eval to convert the string to a dictionary
-        return label_dict
-    except Exception as e:
-        print(f"Error parsing label: {e}")
+def read_gpt_label_safe(label: str):
+    """
+    Safely parses a string that resembles a JSON object into a dictionary.
+    Handles single quotes and 'nan' values for robust parsing.
+    """
+    if not isinstance(label, str) or label == 'gpt_label':
         return {}
+    try:
+        # Prepare string for safe JSON parsing
+        label_str = label.replace("'", '"').replace('nan', 'null')
+        return json.loads(label_str)
+    except json.JSONDecodeError:
+        # Fallback for malformed strings that json.loads can't handle
+        try:
+            return eval(label)
+        except Exception as e:
+            print(f"Error parsing label string: '{label}'. Error: {e}")
+            return {}
 
-classified_data['read_label'] = classified_data['gpt_label'].apply(read_gpt_label)
-classified_data['interpersonal'] = classified_data['read_label'].apply(lambda x: 1 if x.get('Interpersonal', 'No') == 'Yes' else 0)
-classified_data['routine'] = classified_data['read_label'].apply(lambda x: 1 if x.get('Routine', 'No') == 'Yes' else 0)
-classified_data['manual'] = classified_data['read_label'].apply(lambda x: 1 if x.get('Manual', 'No') == 'Yes' else 0)
-classified_data['high_codifiable'] = classified_data['read_label'].apply(lambda x: 1 if x.get('High Cod.', 'No') == 'Yes' else 0)
-
-classified_data['task_clean'] = classified_data['Task'].apply(clean_text)
-
-# Group by Task and compute mode and mean for each category
-classified_data_grouped = classified_data.groupby('task_clean').agg({
-    'interpersonal': ['count', 'mean', lambda x: x.mode()[0] if not x.mode().empty else 0],
-    'routine': ['mean', lambda x: x.mode()[0] if not x.mode().empty else 0],
-    'manual': ['mean', lambda x: x.mode()[0] if not x.mode().empty else 0],
-    'high_codifiable': ['mean', lambda x: x.mode()[0] if not x.mode().empty else 0]
-    }).reset_index()
-
-# collapse the multi-level columns into dimension_mean and dimension_mode
-classified_data_grouped.columns = ['task_clean', 'count', 'interpersonal_mean', 'interpersonal_mode',
-                        'routine_mean', 'routine_mode',
-                        'manual_mean', 'manual_mode',
-                        'high_codifiable_mean', 'high_codifiable_mode']
-
-print("Shape of classified data after grouping by Task: ", classified_data_grouped.shape)
-# save classified data grouped by task
-print("*"*50)
-
-
-# IMPORT the BLS/OES data
-oes_data = pd.read_csv(os.path.join(ailabor_root, 'bls_transformations/output_data/oes_data_filtered_soc_2018.csv'))
-oes_data_occs = oes_data['soc_2018'].unique()
-oes_data_healthcare_occs = oes_data[oes_data['is_healthcare_obs']]['soc_2018'].unique()
-
-print("There are {} unique occupations in OES data.".format(len(oes_data_occs)))
-print("There are {} unique occupations in OES healthcare data.".format(len(oes_data_healthcare_occs)))
-
-# IMPORT the task data
-all_task_datapath = os.path.join(ailabor_root, 'onet_transformations/intermediate_data/task_data_merged_attributes.csv')
-all_task_data = pd.read_csv(all_task_datapath)
-all_task_data['task_clean'] = all_task_data['Task'].apply(clean_text)
-
-# Check how many occs in OES data are present in the task data
-unique_occs_in_task_data = all_task_data['O*NET 2018 SOC Code'].unique()
-oes_in_task_data = np.isin(oes_data_occs, unique_occs_in_task_data).sum()
-print("There are {} occupations in OES data that are also present in the task data.".format(oes_in_task_data))
-
-# Check how many occs in OES healthcare data are present in the task data
-oes_healthcare_in_task_data = np.isin(oes_data_healthcare_occs, unique_occs_in_task_data).sum()
-print("There are {} occupations in OES healthcare data that are also present in the task data.".format(oes_healthcare_in_task_data))
-
-# Save the healthcare occupations in the OES data that are not in the task data to a CSV file
-oes_healthcare_not_in_task_data = oes_data[oes_data['is_healthcare_obs'] & ~oes_data['soc_2018'].isin(unique_occs_in_task_data)]
-oes_healthcare_not_in_task_data.to_csv(os.path.join(ailabor_root, 'bls_transformations/output_data/oes_healthcare_not_in_task_data.csv'), index=False)
-
-print("*"*50)
-
-
-## SECTION: Construction of ALM Dataset
-# datasets 
-# oes_data: the OES data with occupations
-# oes_data_healthcare: the OES data with healthcare occupations
-# all_task_data: the task data with attributes
-# classified_data_grouped: the classified task data
-oes_data_aggregated_occ = oes_data.groupby(['soc_2018', 'bls_release_year']).agg({'tot_emp': 'sum', 'pct_year_tot_emp': 'sum'}).reset_index()
-oes_healthcare_data_aggregated_occ = oes_data[oes_data['is_healthcare_obs']].copy().groupby(['soc_2018', 'bls_release_year']).agg({'tot_emp': 'sum', 'pct_healthcare_tot_emp': 'sum'}).reset_index()
-
-# quick check
-chk = (oes_healthcare_data_aggregated_occ
-       .groupby('bls_release_year')['pct_healthcare_tot_emp']
-       .sum().round(6))
-print(chk.head())   # should print a column of 1.0s
-
-combined_data =  pd.merge(all_task_data, oes_data_aggregated_occ, left_on=['O*NET 2018 SOC Code', 'ONET_release_year'], right_on=['soc_2018', 'bls_release_year'], how='inner')
-combined_data =  pd.merge(combined_data, classified_data_grouped, on='task_clean', how = 'left')
-combined_data_core = combined_data[combined_data['Task Type'] == 'Core'].copy()
-
-combined_data_healthcare = (
-    all_task_data
-        .merge(oes_healthcare_data_aggregated_occ,
-               left_on=['O*NET 2018 SOC Code','ONET_release_year'],
-               right_on=['soc_2018','bls_release_year'],
-               how='inner')
-        .merge(classified_data_grouped, on='task_clean', how='inner')  # INNER keeps only labelled tasks
-)
-combined_data_healthcare_core = combined_data_healthcare[combined_data_healthcare['Task Type'] == 'Core'].copy()
-
-# another check 
-print("#"*25, " For healthcare occupations ", "#"*25)
-comb1 = combined_data_healthcare.groupby(['ONET_release_year', 'O*NET 2018 SOC Code']).agg({'pct_healthcare_tot_emp': 'mean'}).reset_index()
-cov = (comb1
-          .groupby('ONET_release_year')['pct_healthcare_tot_emp']
-          .sum()
-          .rename('covered_share')
-          .reset_index())
-
-print(cov)        # or plot(cov)
-
-# another check 
-print("#"*25, " For full occupations ", "#"*25)
-comb2 = combined_data.groupby(['ONET_release_year', 'O*NET 2018 SOC Code']).agg({'pct_year_tot_emp': 'mean'}).reset_index()
-cov = (comb2
-          .groupby('ONET_release_year')['pct_year_tot_emp']
-          .sum()
-          .rename('covered_share')
-          .reset_index())
-
-print(cov)        # or plot(cov)
-
-print("*"*50)
-
-print("Combined (Full) data shape:", combined_data.shape)
-print("Combined data limited to observations with occupations in healthcare industry shape:", combined_data_healthcare.shape)
-print("Combined data limited to Core tasks shape:", combined_data_core.shape)
-print("Combined data limited to Core tasks in healthcare industry shape:", combined_data_healthcare_core.shape)
-
-print("*"*50)
-
-print("There are {} unique occupations in the combined data for 2003.".format(len(combined_data[combined_data['ONET_release_year'] == 2003]['O*NET 2018 SOC Code'].unique())))
-print("Date range for combined data:", combined_data['ONET_release_year'].min(), "to", combined_data['ONET_release_year'].max())
-
-print("There are {} unique occupations in the combined data limited to core tasks for 2003.".format(len(combined_data_core[combined_data_core['ONET_release_year'] == 2003]['O*NET 2018 SOC Code'].unique())))
-print("Date range for combined core data:", combined_data_core['ONET_release_year'].min(), "to", combined_data_core['ONET_release_year'].max())
-
-print("There are {} unique occupations in the combined healthcare data for 2003.".format(len(combined_data_healthcare[combined_data_healthcare['ONET_release_year'] == 2003]['O*NET 2018 SOC Code'].unique())))
-print("Date range for combined healthcare data:", combined_data_healthcare['ONET_release_year'].min(), "to", combined_data_healthcare['ONET_release_year'].max())
-
-print("There are {} unique occupations in the combined healthcare data limited to core tasks for 2003.".format(len(combined_data_healthcare_core[combined_data_healthcare_core['ONET_release_year'] == 2003]['O*NET 2018 SOC Code'].unique())))
-print("Date range for combined healthcare core data:", combined_data_healthcare_core['ONET_release_year'].min(), "to", combined_data_healthcare_core['ONET_release_year'].max())
-
-print("*"*50)
-
-# Combine the 'mode' columns into a single 'mode' column for each task type
-def combine_modes_full(row):
-    s1 = 'X'
-    s2 = 'X'
-    s3 = 'X'
-    s4 = 'X'
-
-    if pd.isna(row['routine_mode']) or pd.isna(row['interpersonal_mode']) or pd.isna(row['manual_mode']) or pd.isna(row['high_codifiable_mode']): 
-        return np.nan
-
-    if row['routine_mode'] == 1:
-        s1 = 'R'
-    else:
-        s1 = 'NR'
-
-    if row['interpersonal_mode'] == 1:
-        s2 = 'I'
-    else: 
-        s2 = 'P'
-
-    if row['manual_mode'] == 1:
-        s3 = 'M'
-    else:
-        s3 = 'NM'  
+def create_classification_strings(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Vectorized function to create classification strings from mode columns.
+    This is significantly faster than applying a function row-by-row.
+    """
+    df = df.copy()
     
-    if row['high_codifiable_mode'] == 1:
-        s4 = 'HC'
-    else:   
-        s4 = 'LC'
+    # Define required columns for each classification type
+    mode_cols_full = ['routine_mode', 'interpersonal_mode', 'manual_mode', 'high_codifiable_mode']
+    mode_cols_alm = ['routine_mode', 'interpersonal_mode', 'manual_mode']
+    mode_cols_code = ['high_codifiable_mode', 'interpersonal_mode', 'manual_mode']
 
-    return '-'.join([s1, s2, s3, s4])
+    # Ensure mode columns are numeric, coercing errors to NaN
+    for col in mode_cols_full:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-def combine_modes_alm(row):
-    s1 = 'X'
-    s2 = 'X'
-    s3 = 'X'
+    # Create components for classification strings using np.where for efficiency
+    s1_alm = np.where(df['routine_mode'] == 1, 'R', 'NR')
+    s2_alm = np.where(df['interpersonal_mode'] == 1, 'I', 'P')
+    s3_alm = np.where(df['manual_mode'] == 1, 'M', 'NM')
+    s1_code = np.where(df['high_codifiable_mode'] == 1, 'HC', 'LC')
 
-    if pd.isna(row['routine_mode']) or pd.isna(row['interpersonal_mode']) or pd.isna(row['manual_mode']):
-        return np.nan
-    if row['routine_mode'] == 1:
-        s1 = 'R'
-    else: 
-        s1 = 'NR'
-    if row['interpersonal_mode'] == 1:
-        s2 = 'I'
-    else:
-        s2 = 'P'
-    if row['manual_mode'] == 1:
-        s3 = 'M'
-    else:
-        s3 = 'NM'  
+    # Build classification strings and set to NaN where components are missing
+    df['alm_classification'] = pd.Series(s1_alm + '-' + s2_alm + '-' + s3_alm, index=df.index)
+    df.loc[df[mode_cols_alm].isna().any(axis=1), 'alm_classification'] = np.nan
 
-    return '-'.join([s1, s2, s3])
+    df['code_classification'] = pd.Series(s1_code + '-' + s2_alm + '-' + s3_alm, index=df.index)
+    df.loc[df[mode_cols_code].isna().any(axis=1), 'code_classification'] = np.nan
 
+    df['full_classification'] = df['alm_classification'] + '-' + s1_code
+    df.loc[df[mode_cols_full].isna().any(axis=1), 'full_classification'] = np.nan
+    
+    return df
 
-def combine_modes_code(row):
-    s1 = 'X'
-    s2 = 'X'
-    s3 = 'X'
-    if pd.isna(row['interpersonal_mode']) or pd.isna(row['manual_mode']) or pd.isna(row['high_codifiable_mode']): 
-        return np.nan
+# --- MAIN PROCESSING SCRIPT ---
 
-    if row['high_codifiable_mode'] == 1:
-        s1 = 'HC'
-    else:
-        s1 = 'LC'
+def main():
+    """
+    Main function to orchestrate the creation of the ALM dataset.
+    """
+    print("--- Starting ALM Dataset Creation ---")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    if row['interpersonal_mode'] == 1:
-        s2 = 'I'
-    else:
-        s2 = 'P'
-    if row['manual_mode'] == 1:
-        s3 = 'M'
-    else:
-        s3 = 'NM'  
+    # --- 1. Prepare Classified Tasks Data ---
+    print("\n[1/5] Processing classified task data...")
+    classified_data = pd.read_csv(CLASSIFIED_TASKS_PATH)
+    classified_data['read_label'] = classified_data['gpt_label'].apply(read_gpt_label_safe)
 
-    return '-'.join([s1, s2, s3])
+    # Vectorized creation of classification flags using json_normalize
+    labels_df = pd.json_normalize(classified_data['read_label'])
+    classification_dims = {'interpersonal': 'Interpersonal', 'routine': 'Routine', 'manual': 'Manual', 'high_codifiable': 'High Cod.'}
+    for new_col, old_col in classification_dims.items():
+        if old_col in labels_df.columns:
+            classified_data[new_col] = (labels_df[old_col].fillna('No') == 'Yes').astype(int)
+        else:
+            classified_data[new_col] = 0
+            
+    classified_data['task_clean'] = classified_data['Task'].apply(clean_text)
 
-dfs = {'combined_full_all': combined_data, 
-       'combined_healthcare_all': combined_data_healthcare, 
-       'combined_full_core': combined_data_core, 
-       'combined_healthcare_core': combined_data_healthcare_core}
+    # Group by task to get a single classification per unique task
+    classified_data_grouped = classified_data.groupby('task_clean').agg({
+        'interpersonal': ['count', 'mean', lambda x: x.mode()[0] if not x.mode().empty else 0],
+        'routine': ['mean', lambda x: x.mode()[0] if not x.mode().empty else 0],
+        'manual': ['mean', lambda x: x.mode()[0] if not x.mode().empty else 0],
+        'high_codifiable': ['mean', lambda x: x.mode()[0] if not x.mode().empty else 0]
+    }).reset_index()
+    classified_data_grouped.columns = [
+        'task_clean', 'count', 'interpersonal_mean', 'interpersonal_mode',
+        'routine_mean', 'routine_mode', 'manual_mean', 'manual_mode',
+        'high_codifiable_mean', 'high_codifiable_mode'
+    ]
+    print(f"Shape of classified data after grouping by task: {classified_data_grouped.shape}")
+    print("*"*50)
 
+    # --- 2. Load OES and O*NET Task Data ---
+    print("\n[2/5] Loading OES and O*NET data...")
+    oes_data = pd.read_csv(OES_DATA_PATH)
+    all_task_data = pd.read_csv(ALL_TASK_DATA_PATH)
+    all_task_data['task_clean'] = all_task_data['Task'].apply(clean_text)
 
-for name, df in dfs.items():
-    df['full_classification'] = df.apply(combine_modes_full, axis=1)
-    df['alm_classification'] = df.apply(combine_modes_alm, axis=1)
-    df['code_classification'] = df.apply(combine_modes_code, axis=1)
-    print("Final shape of the {} dataframe with classifications:".format(name), df.shape)
+    # --- 3. Analyze Occupation Coverage ---
+    print("\n[3/5] Analyzing occupation coverage...")
+    oes_data_occs = oes_data['soc_2018'].unique()
+    oes_data_healthcare_occs = oes_data[oes_data['is_healthcare_obs']]['soc_2018'].unique()
+    unique_occs_in_task_data = all_task_data['O*NET 2018 SOC Code'].unique()
 
-# Save the final dataframes, use a loop
-for name, df in dfs.items():
-    df.to_csv(os.path.join(ailabor_root, 'alm_analysis/data/{}.csv'.format(name)), index=False)
+    print(f"There are {len(oes_data_occs)} unique occupations in OES data.")
+    print(f"There are {len(oes_data_healthcare_occs)} unique occupations in OES healthcare data.")
+    
+    oes_in_task_data = np.isin(oes_data_occs, unique_occs_in_task_data).sum()
+    print(f"Coverage: {oes_in_task_data}/{len(oes_data_occs)} OES occupations are present in the task data.")
+
+    oes_healthcare_in_task_data = np.isin(oes_data_healthcare_occs, unique_occs_in_task_data).sum()
+    print(f"Healthcare Coverage: {oes_healthcare_in_task_data}/{len(oes_data_healthcare_occs)} OES healthcare occupations are present in the task data.")
+
+    # Save healthcare occupations not covered in task data for review
+    oes_healthcare_not_in_task_data = oes_data[oes_data['is_healthcare_obs'] & ~oes_data['soc_2018'].isin(unique_occs_in_task_data)]
+    oes_healthcare_not_in_task_data.to_csv(HEALTHCARE_NOT_IN_TASK_DATA_PATH, index=False)
+    print(f"Saved {len(oes_healthcare_not_in_task_data)} uncovered healthcare occupations to {os.path.basename(HEALTHCARE_NOT_IN_TASK_DATA_PATH)}")
+    print("*"*50)
+
+    # --- 4. Construct ALM Datasets by Merging ---
+    print("\n[4/5] Constructing ALM datasets...")
+    # Aggregate OES employment data by occupation and year
+    oes_data_aggregated_occ = oes_data.groupby(['soc_2018', 'bls_release_year']).agg({'tot_emp': 'sum', 'pct_year_tot_emp': 'sum'}).reset_index()
+    oes_healthcare_data_aggregated_occ = oes_data[oes_data['is_healthcare_obs']].groupby(['soc_2018', 'bls_release_year']).agg({'tot_emp': 'sum', 'pct_healthcare_tot_emp': 'sum'}).reset_index()
+
+    # --- Merge for the full dataset ---
+    combined_data = pd.merge(all_task_data, oes_data_aggregated_occ, left_on=['O*NET 2018 SOC Code', 'ONET_release_year'], right_on=['soc_2018', 'bls_release_year'], how='inner')
+    combined_data = pd.merge(combined_data, classified_data_grouped, on='task_clean', how='left') # Left merge to keep all tasks
+    
+    # --- Merge for the healthcare dataset ---
+    combined_data_healthcare = pd.merge(all_task_data, oes_healthcare_data_aggregated_occ, left_on=['O*NET 2018 SOC Code', 'ONET_release_year'], right_on=['soc_2018', 'bls_release_year'], how='inner')
+    combined_data_healthcare = pd.merge(combined_data_healthcare, classified_data_grouped, on='task_clean', how='inner') # Inner merge to keep only classified tasks
+
+    # Create 'Core' task subsets
+    combined_data_core = combined_data[combined_data['Task Type'] == 'Core'].copy()
+    combined_data_healthcare_core = combined_data_healthcare[combined_data_healthcare['Task Type'] == 'Core'].copy()
+
+    dfs = {
+        'combined_full_all': combined_data, 
+        'combined_healthcare_all': combined_data_healthcare, 
+        'combined_full_core': combined_data_core, 
+        'combined_healthcare_core': combined_data_healthcare_core
+    }
+
+    print("Initial merged data shapes:")
+    for name, df in dfs.items():
+        print(f"  - {name}: {df.shape}")
+    print("*"*50)
+
+    # --- 5. Add Classifications and Save Results ---
+    print("\n[5/5] Adding classification strings and saving final datasets...")
+    for name, df in dfs.items():
+        # Add classification strings using the vectorized function
+        df_classified = create_classification_strings(df)
+        
+        # Save the final dataframe
+        output_path = os.path.join(OUTPUT_DIR, f'{name}.csv')
+        df_classified.to_csv(output_path, index=False)
+        print(f"Saved '{name}' dataframe with shape {df_classified.shape} to {os.path.basename(output_path)}")
+
+    print("\n--- ALM Dataset Creation Complete ---")
+
+if __name__ == "__main__":
+    main()

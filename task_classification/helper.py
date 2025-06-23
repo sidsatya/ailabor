@@ -111,7 +111,7 @@ def process_dataframe(df: pd.DataFrame
                       , intermediate_savepath: str = "intermediate_results/classified_tasks_intermediate.csv"
                       , final_savepath: str = "classified_tasks_final.csv") -> pd.DataFrame:
     os.chdir(os.path.dirname(__file__))
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY_BROWN")) # TODO: YOU NEED TO SET THIS API KEY
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) # TODO: YOU NEED TO SET THIS API KEY
     
     # Create output directory
     output_dir = "data/"

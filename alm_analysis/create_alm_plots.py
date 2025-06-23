@@ -36,12 +36,16 @@ def diagnostics_missing(df, emp_col, out_prefix):
         ['interpersonal_mean','routine_mean','manual_mean','high_codifiable_mean']
     ].notna().all(axis=1)
 
+    
+
     # occ-year summary
     occyr = (df.groupby(['O*NET 2018 SOC Code','ONET_release_year'], as_index=False)
                .agg(total_rows      =('row_classified','size'),
                     classified_rows =('row_classified','sum'),
                     emp_share       =(emp_col,'first')))
+
     occyr['kept'] = occyr['total_rows'] == occyr['classified_rows']
+    print(occyr)
 
     # ---------- console summary ----------
     print("\n===== missing-task diagnostics =====")
@@ -58,8 +62,8 @@ def diagnostics_missing(df, emp_col, out_prefix):
         yearly['pct_dropped'] = yearly['emp_dropped'] / (yearly['emp_kept']+yearly['emp_dropped'])
     except KeyError: 
         yearly['pct_dropped'] = np.nan
-    print("\nshare of HC employment dropped by year (first 10 rows):")
-    print(yearly.head(10))
+    print("\nshare of HC employment dropped by year:")
+    print(yearly.head(25))
 
     # ---------- write to disk ----------
     os.makedirs('diagnostics', exist_ok=True)
@@ -189,7 +193,6 @@ def compute_percentiles_for_classification(val, ecdf_results, classification, in
     return percentile_of_midpoint(val, x_ecdf, cdf_vals, w_norm)
     
 def create_filtered_data_grp(data, emp_share_col, all_classifications, intensity_col='task_intensity'):
-    print(data.columns)
     # 1. collapse to occupation-year-bucket
     occ_year_cls = (
         data.groupby(['O*NET 2018 SOC Code', 'ONET_release_year', 'classification'],
@@ -203,8 +206,6 @@ def create_filtered_data_grp(data, emp_share_col, all_classifications, intensity
         occ_year_cls = occ_year_cls.rename(columns={'intensity_col': intensity_col})
 
     # 2. total intensity per occupation-year  (denominator for shares)
-    print(intensity_col)
-    print(occ_year_cls.columns)
     total_int = (occ_year_cls.groupby(['O*NET 2018 SOC Code', 'ONET_release_year'],
                                       as_index=False)[intensity_col]
                                .sum()
@@ -400,7 +401,7 @@ for scope in ['full', 'healthcare']:
             all_classifications = get_all_possible_classifications(choices_per_dimension)
 
             # Define input and output file paths
-            in_file = f'alm_analysis/data/combined_{scope}_{task_scope}.csv'
+            in_file = f'alm_analysis/data1/combined_{scope}_{task_scope}.csv'
             out_file = f'{classification_type}_plot_{scope}_{task_scope}_tasks.png'
 
             emp_share_col = 'pct_healthcare_tot_emp' if scope == 'healthcare' else 'pct_year_tot_emp'
@@ -417,6 +418,7 @@ for scope in ['full', 'healthcare']:
             # Filter the data
             diagnostics_missing(full_data, emp_share_col,
                     out_prefix=f'{scope}_{task_scope}_{classification_type}')
+
             filtered_data = filter_data(full_data, emp_share_col, intensity_col)
             filtered_data_grp = create_filtered_data_grp(filtered_data, emp_share_col, all_classifications, intensity_col)
 
@@ -442,19 +444,20 @@ for scope in ['full', 'healthcare']:
             print("Sanity check: ", baseline.round(4))
 
             # Create ALM plots
-            create_alm_plots(filtered_data_grp, all_classifications, 'percentile', out_file, output_dir=os.path.join(ailabor_root, 'results/alm_classification_results/'))
+            output_dir = os.path.join(ailabor_root, 'results/alm_classification_results_new/')
+            create_alm_plots(filtered_data_grp, all_classifications, 'percentile', out_file, output_dir=output_dir)
 
             # Create between-occupation composition plots
-            create_between_occ_composition_plots(filtered_data_grp, all_classifications, 'percentile', emp_share_col, intensity_col, out_file.replace('.png', '_between_occ.png'), output_dir=os.path.join(ailabor_root, 'results/alm_classification_results/'))
+            create_between_occ_composition_plots(filtered_data_grp, all_classifications, 'percentile', emp_share_col, intensity_col, out_file.replace('.png', '_between_occ.png'), output_dir=output_dir)
 
             # Save examples of each classification group if scope is healthcare
             if scope == 'healthcare':
                 for classification in all_classifications:
-                    subset = filtered_data_grp[filtered_data_grp['classification'] == classification]
+                    subset = filtered_data[filtered_data['classification'] == classification]
                     if not subset.empty:
-                        subset.to_csv(os.path.join(ailabor_root, f'results/alm_classification_results/classification_examples/{classification_type}_{scope}_{task_scope}_{classification}_examples.csv'), index=False)
+                        subset.to_csv(f'{output_dir}classification_examples/{classification_type}_{scope}_{task_scope}_{classification}_examples.csv', index=False)
             print(f"Completed processing for {classification_type} for scope {scope} and task scope {task_scope}")
             print("#" * 50)
 
             # save the filtered data for further analysis
-            filtered_data_grp.to_csv(os.path.join(ailabor_root, f'alm_analysis/plot_data/{classification_type}_{scope}_{task_scope}_filtered_data.csv'), index=False)
+            filtered_data_grp.to_csv(os.path.join(ailabor_root, f'alm_analysis/data1/plot_data/{classification_type}_{scope}_{task_scope}_filtered_data.csv'), index=False)
