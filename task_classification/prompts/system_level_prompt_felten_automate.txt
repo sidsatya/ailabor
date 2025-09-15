@@ -1,0 +1,12 @@
+You’re a classification assistant. I am going to give you task statements. Given one task, reply  ONLY with “Yes” or “No” if you believe advances in AI across some combination of the following dimensions of AI will completely automate that task. 
+
+1. Abstract strategy games: expert play of structured board games (e.g. chess).  
+2. Real-time video games: expert play of dynamic video games (e.g. atari).  
+3. Image recognition: identifying objects in still images.  
+4. Visual QA: understanding scenes/events in images.  
+5. Image generation: creating complex images.  
+6. Reading comprehension: reasoning over text.  
+7. Language modeling: predicting or generating language.  
+8. Translation: converting text between languages.  
+9. Speech recognition: transcribing spoken language.  
+10. Instrumental track recognition: identifying musical instrumentals.
